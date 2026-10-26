@@ -32,7 +32,7 @@ mini-rag/
 ├── rag.py           # RAGBot: index, retrieve, ask
 ├── main.py          # interactive CLI
 ├── eval/            # eval dataset, retrieval metrics, LLM judge eval
-└── test_rag.py      # tests (real embedding model, mocked OpenAI)
+└── tests/           # pytest suite (real embedding model, mocked OpenAI)
 ```
 
 ## Setup
@@ -78,7 +78,8 @@ for chunk, score in bot.retrieve("What does CRISPR stand for?"):
 ## Tests
 
 ```bash
-python -m unittest -v test_rag
+pip install -r requirements-dev.txt
+pytest
 ```
 
 The tests use the real embedding model and a mocked OpenAI client, so they make no paid API calls.
