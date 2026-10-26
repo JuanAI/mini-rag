@@ -9,7 +9,7 @@ Conventions:
 
 ---
 
-## Data model — `parser.py`
+## Data model — `parsing.py`
 
 ```python
 @dataclass
@@ -33,7 +33,7 @@ class Document:
 - `Chunk.chunk_id` is unique within an index. Evaluation never refers to it, so it doesn't need to stay the same across runs (see [Evaluation](#evaluation--eval)).
 - A `Document` has at least one `Page`.
 
-## Text cleanup — `parser.py`
+## Text cleanup — `parsing.py`
 
 ```python
 def lint_text(text: str) -> str
@@ -48,7 +48,7 @@ def lint_text(text: str) -> str
 - **Post**: running it twice gives the same result as running it once.
 - A blank input returns `""`; it never raises.
 
-## Parsers — `parser.py`
+## Parsers — `parsing.py`
 
 ```python
 class Parser(ABC):

@@ -23,19 +23,19 @@ No application code is committed in this step. The earlier prototype is kept onl
 
 **Done when**: the dependencies install cleanly and `pytest` runs. ✅
 
-## Step 1 — Parsing (`parser.py`)
+## Step 1 — Parsing (`parsing.py`) ✅
 
 Tests first:
-- [ ] `lint_text`: CRLF/CR → LF, tabs and runs of spaces collapse, three or more newlines become one blank line, non-printable characters are removed, the output is stripped, and running it twice changes nothing.
-- [ ] `TxtParser.parse_file`: returns one page, `page_number == 1`, `file_type == "txt"`, and the text is the linted content.
-- [ ] `ParserFactory.supports`: `.txt` and `.TXT` → `True`; `.md` and files with no extension → `False`.
-- [ ] `ParserFactory.get_parser`: raises `NotImplementedError` for unsupported files.
+- [x] `lint_text`: CRLF/CR → LF, tabs and runs of spaces collapse, three or more newlines become one blank line, non-printable characters are removed, the output is stripped, and running it twice changes nothing.
+- [x] `TxtParser.parse_file`: returns one page, `page_number == 1`, `file_type == "txt"`, and the text is the linted content.
+- [x] `ParserFactory.supports`: `.txt` and `.TXT` → `True`; `.md` and files with no extension → `False`.
+- [x] `ParserFactory.get_parser`: raises `NotImplementedError` for unsupported files.
 
 Implementation and cleanup:
-- [ ] Rename `txtParser` to `TxtParser`.
-- [ ] Remove the fields nobody uses from `Page` (`chunks`, `embeddings`) and the `numpy` import.
+- [x] Rename `txtParser` to `TxtParser`.
+- [x] Remove the fields nobody uses from `Page` (`chunks`, `embeddings`) and the `numpy` import.
 
-**Done when**: all parser tests pass with no model loaded.
+**Done when**: all parser tests pass with no model loaded. ✅ 26 passed in 0.01 s.
 
 ## Step 2 — Chunking (`chunker.py`)
 
