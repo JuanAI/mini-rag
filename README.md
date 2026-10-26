@@ -31,6 +31,7 @@ mini-rag/
 ├── chunker.py       # token-based overlapping chunker
 ├── rag.py           # RAGBot: index, retrieve, ask
 ├── main.py          # interactive CLI
+├── eval/            # eval dataset, retrieval metrics, LLM judge eval
 └── test_rag.py      # tests (real embedding model, mocked OpenAI)
 ```
 
@@ -81,6 +82,16 @@ python -m unittest -v test_rag
 ```
 
 The tests use the real embedding model and a mocked OpenAI client, so they make no paid API calls.
+
+## Evaluation
+
+| What | Tool | Where it runs |
+|---|---|---|
+| Retrieval quality: Recall@3, MRR, nDCG@3 against hand-labelled qrels | [`ranx`](https://github.com/AmenRa/ranx) | CI, on every push. Fails if a metric drops below `eval/baselines/retrieval.json` |
+| Citation validity | plain Python | CI, on every push |
+| Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm_eval`, then `mlflow ui` |
+
+CI needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes.
 
 ## Limitations
 

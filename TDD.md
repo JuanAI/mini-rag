@@ -15,7 +15,7 @@ Conventions:
 @dataclass
 class Chunk:
     text: str
-    chunk_id: UUID | str
+    chunk_id: str             # "{source}:{index}", e.g. "jupiter.txt:3"
     source: str = ""
 
 @dataclass
@@ -30,7 +30,7 @@ class Document:
 ```
 
 - `Chunk.source` is the file path **relative to the ingested folder**, e.g. `"jupiter.txt"`, so citations don't leak absolute paths.
-- `Chunk.chunk_id` is unique within an index.
+- `Chunk.chunk_id` is unique within an index and **stable**: the same file and chunker settings always produce the same IDs. Evaluation labels (qrels) refer to chunks by this ID, so random IDs would break them on every run.
 - A `Document` has at least one `Page`.
 
 ## Text cleanup — `parser.py`
@@ -105,7 +105,7 @@ class TokenChunker:
   - Consecutive chunks share exactly `overlap` tokens.
   - The last chunk ends at token `n`, and no chunk lies entirely inside the previous one.
   - Every chunk has at most `chunk_size_tokens` tokens, and so at most `tokeniser.max_tokens`.
-  - Every chunk has `source == str(path)` and a fresh `chunk_id`.
+  - Every chunk has `source == str(path)` and `chunk_id == f"{path}:{i}"`, where *i* is its 0-based position.
 - Worked example: 12 tokens, size 5, overlap 1 → `[0..4] [4..8] [8..11]`.
 
 ## RAG engine — `rag.py`
@@ -177,6 +177,78 @@ class RAGBot:
 - Runs a loop of `Me: ` prompt → `ask()` → `RAGBot: {response}`.
 - EOF (Ctrl-D) or Ctrl-C exits cleanly, with no traceback.
 
+## Evaluation — `eval/`
+
+Evaluation is split by cost and determinism:
+
+| Suite | Runs | Needs | Fails the build? |
+|---|---|---|---|
+| Retrieval (`ranx`) | CI, on every push and PR | Embedding model only | Yes, if a metric drops below baseline |
+| Citation checks | CI, on every push and PR | Nothing | Yes |
+| LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
+
+### Dataset — `eval/dataset.jsonl`
+
+One JSON object per line:
+
+```json
+{"id": "q01", "question": "What are the four Galilean moons?",
+ "answer_type": "answerable", "expected_answer": "Io, Europa, Ganymede and Callisto",
+ "qrels": {"jupiter.txt:3": 2, "jupiter.txt:4": 1}}
+```
+
+- `id` is unique.
+- `answer_type` is `"answerable"` or `"unanswerable"`.
+- `qrels` maps `chunk_id` → graded relevance: 2 = answers the question, 1 = related, 0 or absent = not relevant. It is empty for unanswerable questions.
+- Every `chunk_id` in `qrels` must exist in the index built from `data/`. A test enforces this, so a chunker change that would make the labels stale fails loudly.
+- An LLM may draft the labels, but a person reviews every one before it is committed.
+
+### Retrieval metrics — `eval/retrieval.py`
+
+```python
+def load_dataset(path: Path) -> list[dict]: ...
+def build_qrels(dataset: list[dict]) -> ranx.Qrels: ...
+def build_run(bot: RAGBot, dataset: list[dict], k: int = 3) -> ranx.Run: ...
+def evaluate_retrieval(qrels: ranx.Qrels, run: ranx.Run) -> dict[str, float]: ...
+```
+
+- Only answerable questions are scored.
+- `evaluate_retrieval` returns `{"recall@3", "mrr@3", "ndcg@3"}`, each in `[0, 1]`.
+- Results are deterministic: the same code, data and model always give the same metrics.
+- **CI gate** (`tests/test_eval_retrieval.py`): each metric must be ≥ `eval/baselines/retrieval.json` value − 0.02.
+- The baseline is updated only deliberately, by running `python -m eval.retrieval --update-baseline` and committing the result, so every change to it is visible in the PR diff.
+
+### Citation checks — `eval/checks.py`
+
+```python
+def invalid_citations(answer: str, n_sources: int) -> list[int]: ...
+```
+
+- Returns every `[n]` in `answer` where `n < 1` or `n > n_sources`. An empty list means all citations are valid.
+- These are pure functions, unit-tested in CI and reused as a scorer in the LLM eval.
+
+### LLM answer eval — `eval/llm_eval.py`
+
+```bash
+python -m eval.llm_eval [--limit N] [--run-name NAME]
+```
+
+- Runs `RAGBot.ask` on every dataset question and scores the results with `mlflow.genai.evaluate()`, logging them to a local MLflow store (`mlruns/`, ignored by git).
+- Scorers:
+
+| Scorer | Kind | Checks |
+|---|---|---|
+| `RetrievalGroundedness` | built-in judge | Answer is supported by the retrieved context |
+| `RelevanceToQuery` | built-in judge | Answer addresses the question |
+| `RetrievalSufficiency` | built-in judge | Context contained enough to answer |
+| `Correctness` | built-in judge | Answer matches `expected_answer` (answerable questions only) |
+| `refusal` | `make_judge()` | Unanswerable questions get a "don't know" answer, not a guess |
+| `citation_validity` | code (`@scorer`) | `invalid_citations(...) == []` |
+
+- The judge model comes from `JUDGE_MODEL`, and must be a different model family from the generator.
+- Mean scores are logged both overall and per `answer_type`.
+- **Never runs in PR CI.** The scores vary from run to run and it costs money.
+
 ## Configuration — `.env`
 
 | Variable | Required | Default |
@@ -185,5 +257,7 @@ class RAGBot:
 | `MODEL_NAME` | no | `gpt-4o-mini` |
 | `EMBEDDING_MODEL` | no | `sentence-transformers/all-MiniLM-L6-v2` |
 | `TOKENIZERS_PARALLELISM` | no | `false` (set by `rag.py` if unset) |
+| `JUDGE_MODEL` | LLM eval only | `anthropic:/claude-haiku-5-5` |
+| `ANTHROPIC_API_KEY` | LLM eval only | (none) |
 
 Secrets come only from the environment. None are written in source code.

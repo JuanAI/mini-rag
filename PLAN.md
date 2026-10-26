@@ -8,7 +8,7 @@ Each step follows the same loop:
 3. **Refactor**: clean up while the tests stay green.
 4. Commit.
 
-Steps 1–4 run offline. Only step 5 needs an OpenAI key, and its tests mock OpenAI anyway.
+Steps 1–4 and 7 run without API keys. Step 5 tests mock OpenAI. Only step 8 calls paid APIs.
 
 ---
 
@@ -42,7 +42,7 @@ Tests first, using a fake tokeniser so they run in milliseconds:
 - [ ] Text that fits in one chunk → exactly one chunk.
 - [ ] Blank text → `[]`.
 - [ ] Invalid size or overlap → `ValueError`.
-- [ ] `source == str(path)`, and `chunk_id`s are unique.
+- [ ] `source == str(path)`, and `chunk_id == f"{path}:{i}"`, so chunking the same text twice gives identical IDs.
 - [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
 
 One test with the real model:
@@ -106,14 +106,42 @@ Tests first:
 
 **Done when**: `python main.py` works from both the repo root and elsewhere.
 
-## Step 7 — Polish and publish
+## Step 7 — Retrieval eval (CI)
+
+- [ ] Add `requirements-dev.txt` containing `pytest` and `ranx`.
+- [ ] Write `eval/dataset.jsonl`: about 30 questions, roughly 10 per document, plus about 5 unanswerable ones. Have an LLM draft the qrels, then review every label by hand.
+
+Tests first:
+- [ ] Every `chunk_id` in `qrels` exists in the index built from `data/`.
+- [ ] `invalid_citations("A [1] B [4]", 3) == [4]`, plus `[0]`, no citations, and repeated citations.
+- [ ] `evaluate_retrieval` returns all three metrics in `[0, 1]`, and gives the same numbers on a second run.
+- [ ] Every metric is ≥ baseline − 0.02.
+
+Then:
+- [ ] Implement `eval/retrieval.py` and `eval/checks.py`.
+- [ ] Generate `eval/baselines/retrieval.json` and commit it.
+
+**Done when**: `pytest` runs the retrieval gate in seconds, with no API keys.
+
+## Step 8 — LLM answer eval (on demand)
+
+- [ ] Add `requirements-eval.txt` containing `mlflow` (a version with `mlflow.genai`) and `anthropic`. Add `mlruns/` to `.gitignore`.
+- [ ] Implement `eval/llm_eval.py` with the scorers listed in TDD.md. Smoke-test it with `--limit 3`.
+- [ ] Do a full run and check about 10 judge verdicts by hand. If the judge disagrees with you, tighten the `refusal` instructions.
+- [ ] Record the baseline run name and its scores in the README.
+
+**Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`.
+
+## Step 9 — Polish and publish
 
 - [ ] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders.
 - [ ] Check that README examples match real output. Replace the illustrative sample session with a real one.
-- [ ] Optional: add a `ruff` config and a GitHub Actions workflow that runs the tests on Python 3.10–3.12, with the Hugging Face model cache saved between runs.
+- [ ] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets.
+- [ ] Optional: a `llm-eval.yml` workflow triggered manually (`workflow_dispatch`), using API keys stored as repo secrets.
+- [ ] Optional: a `ruff` config.
 - [ ] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`.
 
-**Done when**: CI is green, or the tests pass locally if CI is skipped, and the repo on GitHub matches the README.
+**Done when**: CI is green on `main`, and the repo on GitHub matches the README.
 
 ---
 
