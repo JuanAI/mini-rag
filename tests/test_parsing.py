@@ -2,45 +2,19 @@ from pathlib import Path
 
 import pytest
 
-from parsing import Chunk, Document, Page, ParserFactory, TxtParser, lint_text
-
-
-class TestLintText:
-    @pytest.mark.parametrize("raw, expected", [
-        ("a\r\nb\rc", "a\nb\nc"),
-        ("a \t  b\t\tc", "a b c"),
-        ("a\n\n\n\nb", "a\n\nb"),
-        ("a\n \t\n  \nb", "a\n\nb"),
-        ("a\nb", "a\nb"),
-        ("a\x00b\x07c\x1b", "abc"),
-        ("a\x00 \x00 b", "a b"),
-        ("  \n padded \n  ", "padded"),
-    ])
-    def test_cleanup_rules(self, raw, expected):
-        assert lint_text(raw) == expected
-
-    @pytest.mark.parametrize("blank", ["", "   ", "\n\t\r\n", "\x00\x07"])
-    def test_blank_input_returns_empty_string(self, blank):
-        assert lint_text(blank) == ""
-
-    @pytest.mark.parametrize("raw", [
-        "a\r\n\r\n\r\nb  \t c\x00",
-        " x \n\n \n y \n",
-        "one\n\ntwo\n\n\n\nthree",
-    ])
-    def test_idempotent(self, raw):
-        once = lint_text(raw)
-        assert lint_text(once) == once
+from parsing import Chunk, Document, Page, ParserFactory, TxtParser
 
 
 class TestTxtParser:
-    def test_single_linted_page(self, tmp_path):
+    def test_single_page_with_text_unchanged(self, tmp_path):
+        # Cleanup is left to the tokenizer; the parser must not alter the text.
+        content = "Title\n\n\nBody  text, with Capitals.\n"
         path = tmp_path / "doc.txt"
-        path.write_text("Title\r\n\r\n\r\nBody  text\x00", encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
 
         document = TxtParser().parse_file(path)
 
-        assert document == Document(pages=[Page(page_number=1, text="Title\n\nBody text")], file_type="txt")
+        assert document == Document(pages=[Page(page_number=1, text=content)], file_type="txt")
 
     def test_missing_file_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):

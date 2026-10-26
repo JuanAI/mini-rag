@@ -14,8 +14,8 @@ Retrieved sources:
 
 ## How it works
 
-1. **Parse**: `parsing.py` reads each `.txt` file and normalizes whitespace and non-printable characters. Other file types are skipped. `ParserFactory` is the place to add new formats.
-2. **Chunk**: `chunker.py` splits text by *tokens*, not characters, using the embedding model's own tokenizer. Chunks are up to 200 tokens, capped by the model's input limit, with 20% overlap so context at the boundaries isn't lost. Each chunk keeps its source filename.
+1. **Parse**: `parsing.py` reads each `.txt` file as is. Other file types are skipped. `ParserFactory` is the place to add new formats.
+2. **Chunk**: `chunker.py` splits text by *tokens*, not characters, using the embedding model's own tokenizer. Chunks are up to 200 tokens, capped by the model's input limit, with 20% overlap so context at the boundaries isn't lost. Chunk text is cut straight from the original, so capital letters and paragraphs are kept. Each chunk keeps its source filename.
 3. **Embed**: chunks are batch-encoded with [`all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and L2-normalized, so a dot product equals cosine similarity.
 4. **Retrieve**: the question is embedded the same way, scored against every chunk with a single matrix product, and the top *k* (default 3) are returned.
 5. **Generate**: the retrieved chunks go into the prompt with numbered source labels. The system prompt tells the model to answer only from that context, treat it as data rather than instructions, cite passages as `[1]`, `[2]`, and say when the answer isn't there.
@@ -27,7 +27,7 @@ A NumPy matrix is enough at this scale. There's no persistence, reranker or conv
 ```
 mini-rag/
 ├── data/            # sample corpus: Ada Lovelace, Jupiter, CRISPR (from Wikipedia)
-├── parsing.py       # file → Document/Page, text cleanup
+├── parsing.py       # file → Document/Page
 ├── chunker.py       # token-based overlapping chunker
 ├── rag.py           # RAGBot: index, retrieve, ask
 ├── main.py          # interactive CLI
