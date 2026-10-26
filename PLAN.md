@@ -16,7 +16,7 @@ Steps 1–4 and 7 run without API keys. Step 5 tests mock OpenAI. Only step 8 ca
 
 - [x] `python -m venv .venv && pip install -r requirements-dev.txt`
 - [x] `cp .env.example .env`. The key stays empty for now; retrieval and tests don't need it.
-- [x] Set up the test layout: `tests/` holds the tests, and `tests/conftest.py` provides a `bot` fixture (scoped to the session, so the model loads once) and an `empty_bot` fixture that shares the model. `pyproject.toml` sets `pythonpath` and `testpaths`.
+- [x] Set up the test layout: `tests/` holds the tests, and `pyproject.toml` sets `pythonpath` and `testpaths`. Shared fixtures go into `tests/conftest.py` in the step that first needs them (Steps 2 and 3).
 - [x] Check that `pytest` runs. It collects no tests yet: Steps 1–6 add each module together with its tests.
 
 No application code is committed in this step. The earlier prototype is kept only as local reference; each module is rebuilt test-first in its own step.
@@ -48,6 +48,7 @@ Tests first, using a fake tokeniser so they run in milliseconds:
 - [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
 
 One test with the real model:
+- [ ] Create `tests/conftest.py` with a session-scoped `model` fixture, so the embedding model loads once per test run.
 - [ ] Every chunk of `data/*.txt` re-encodes to no more than `max_seq_length` tokens.
 
 Implementation and cleanup:
@@ -59,6 +60,7 @@ Implementation and cleanup:
 ## Step 3 — Indexing (`RAGBot.read_and_embed_data`)
 
 Tests first:
+- [ ] Add a session-scoped `bot` fixture to `tests/conftest.py` (built on `model`, indexed over `data/`), and an `empty_bot` fixture that shares the model but has its own empty index.
 - [ ] Indexing the sample `data/` gives `len(chunks) == embeddings.shape[0]`, and every row has norm 1.
 - [ ] Sources are relative (`"jupiter.txt"`, not `"data/jupiter.txt"`).
 - [ ] A temporary folder containing `.DS_Store` and a blank `.txt` → `ValueError`.
