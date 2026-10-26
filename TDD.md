@@ -69,6 +69,7 @@ class Tokeniser:
 ```
 
 - `max_tokens == model.max_seq_length - tokenizer.num_special_tokens_to_add()`. This is the largest chunk the model can embed without truncation.
+- Requires a fast tokenizer, because only fast tokenizers report character positions. Otherwise the constructor raises `ValueError`.
 - `encode` returns token IDs together with each token's `(start, end)` character position in `text`. Both lists are the same length.
 - `encode` adds no special tokens and does no truncation, so whole documents can be longer than the model limit.
 - There is no `decode`. Decoding gives back lowercased text with line breaks removed, so chunk text is cut from the original string using the positions instead.
@@ -84,7 +85,7 @@ class TokenChunker:
     def chunk(self, text: str, path: Path | str = "") -> list[Chunk]: ...
 ```
 
-- **Pre**: `chunk_size_tokens > 0` and `0 <= chunk_overlap_percentage < 1`. Otherwise `ValueError`.
+- **Pre**: `chunk_size_tokens > 0` and `0 <= chunk_overlap_percentage < 1`. Otherwise the constructor raises `ValueError`, so bad settings fail immediately rather than on the first `chunk()` call.
 - **Post** for blank `text`: returns `[]`.
 - **Post** for any other `text`, where `overlap = int(chunk_size_tokens * chunk_overlap_percentage)` and `step = chunk_size_tokens - overlap`:
   - Chunk *i* covers tokens `[i*step, min(i*step + chunk_size_tokens, n))`.
