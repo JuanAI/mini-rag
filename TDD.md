@@ -15,7 +15,7 @@ Conventions:
 @dataclass
 class Chunk:
     text: str
-    chunk_id: str             # "{source}:{index}", e.g. "jupiter.txt:3"
+    chunk_id: UUID | str
     source: str = ""
 
 @dataclass
@@ -30,7 +30,7 @@ class Document:
 ```
 
 - `Chunk.source` is the file path **relative to the ingested folder**, e.g. `"jupiter.txt"`, so citations don't leak absolute paths.
-- `Chunk.chunk_id` is unique within an index and **stable**: the same file and chunker settings always produce the same IDs. Evaluation labels (qrels) refer to chunks by this ID, so random IDs would break them on every run.
+- `Chunk.chunk_id` is unique within an index. Evaluation never refers to it, so it doesn't need to stay the same across runs (see [Evaluation](#evaluation--eval)).
 - A `Document` has at least one `Page`.
 
 ## Text cleanup — `parser.py`
@@ -92,9 +92,10 @@ class Tokeniser:
 
 ```python
 class TokenChunker:
-    chunk_size_tokens: int          # min(200, tokeniser.max_tokens)
-    chunk_overlap_percentage: float # 0.2
-    def __init__(self, tokeniser: Tokeniser) -> None: ...
+    chunk_size_tokens: int          # min(requested size, tokeniser.max_tokens)
+    chunk_overlap_percentage: float
+    def __init__(self, tokeniser: Tokeniser, chunk_size_tokens: int = 200,
+                 chunk_overlap_percentage: float = 0.2) -> None: ...
     def chunk(self, text: str, path: Path | str = "") -> list[Chunk]: ...
 ```
 
@@ -105,7 +106,7 @@ class TokenChunker:
   - Consecutive chunks share exactly `overlap` tokens.
   - The last chunk ends at token `n`, and no chunk lies entirely inside the previous one.
   - Every chunk has at most `chunk_size_tokens` tokens, and so at most `tokeniser.max_tokens`.
-  - Every chunk has `source == str(path)` and `chunk_id == f"{path}:{i}"`, where *i* is its 0-based position.
+  - Every chunk has `source == str(path)` and a fresh `chunk_id`.
 - Worked example: 12 tokens, size 5, overlap 1 → `[0..4] [4..8] [8..11]`.
 
 ## RAG engine — `rag.py`
@@ -120,14 +121,14 @@ class RAGBot:
     embeddings: np.ndarray | None   # shape (len(chunks), dim), float32, unit rows
     openai_client: OpenAI | None    # created lazily
 
-    def __init__(self) -> None: ...
+    def __init__(self, chunk_size_tokens: int = 200) -> None: ...
     def read_and_embed_data(self, folder_path: str | Path) -> None: ...
     def retrieve(self, question: str, k: int = 3) -> list[tuple[Chunk, float]]: ...
     def ask(self, question: str, k: int = 3) -> str: ...
 ```
 
 ### `__init__`
-- Loads the embedding model. It does **not** need OpenAI credentials and does not create an OpenAI client.
+- Loads the embedding model and builds a `TokenChunker` with `chunk_size_tokens`. It does **not** need OpenAI credentials and does not create an OpenAI client.
 - **Post**: `chunks == []`, `embeddings is None`, `openai_client is None`.
 
 ### `read_and_embed_data(folder_path)`
@@ -183,7 +184,7 @@ Evaluation is split by cost and determinism:
 
 | Suite | Runs | Needs | Fails the build? |
 |---|---|---|---|
-| Retrieval (`ranx`) | CI, on every push and PR | Embedding model only | Yes, if a metric drops below baseline |
+| Retrieval (custom, keyword-matched) | CI, on every push and PR | Embedding model only | Yes, if a metric drops below baseline |
 | Citation checks | CI, on every push and PR | Nothing | Yes |
 | LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
 
@@ -192,31 +193,49 @@ Evaluation is split by cost and determinism:
 One JSON object per line:
 
 ```json
-{"id": "q01", "question": "What are the four Galilean moons?",
- "answer_type": "answerable", "expected_answer": "Io, Europa, Ganymede and Callisto",
- "qrels": {"jupiter.txt:3": 2, "jupiter.txt:4": 1}}
+{"id": "q01", "question": "Who discovered the four largest moons of Jupiter in 1610?",
+ "answer_type": "answerable", "keyword": "galileo galilei", "source": "jupiter",
+ "expected_answer": "Galileo Galilei"}
 ```
 
 - `id` is unique.
 - `answer_type` is `"answerable"` or `"unanswerable"`.
-- `qrels` maps `chunk_id` → graded relevance: 2 = answers the question, 1 = related, 0 or absent = not relevant. It is empty for unanswerable questions.
-- Every `chunk_id` in `qrels` must exist in the index built from `data/`. A test enforces this, so a chunker change that would make the labels stale fails loudly.
-- An LLM may draft the labels, but a person reviews every one before it is committed.
+- `keyword` is a phrase that appears **only** in the passage that answers the question. `source` is a substring of the document's filename.
+- Unanswerable questions have no `keyword` or `source`. They are used only by the LLM eval.
+- The starting set is the 50 existing questions (20 Ada Lovelace, 14 CRISPR, 16 Jupiter), plus about 5 unanswerable ones.
+
+**Why keywords rather than chunk IDs.** A chunk is relevant when it comes from `source` and contains `keyword`, after both are normalized. Relevance is worked out again on every run, so the labels survive any change to chunk size, overlap or embedding model. That is exactly what the eval exists to compare. Labels that pointed at chunk IDs would go stale on every chunker change.
 
 ### Retrieval metrics — `eval/retrieval.py`
 
 ```python
+def norm(text: str) -> str: ...
 def load_dataset(path: Path) -> list[dict]: ...
-def build_qrels(dataset: list[dict]) -> ranx.Qrels: ...
-def build_run(bot: RAGBot, dataset: list[dict], k: int = 3) -> ranx.Run: ...
-def evaluate_retrieval(qrels: ranx.Qrels, run: ranx.Run) -> dict[str, float]: ...
+def invalid_keywords(bot: RAGBot, dataset: list[dict]) -> list[str]: ...
+def rank_of_answer(bot: RAGBot, item: dict) -> int | None: ...
+def evaluate_retrieval(bot: RAGBot, dataset: list[dict], ks=(1, 3, 5, 10)) -> dict[str, float]: ...
 ```
 
-- Only answerable questions are scored.
-- `evaluate_retrieval` returns `{"recall@3", "mrr@3", "ndcg@3"}`, each in `[0, 1]`.
+```bash
+python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline]
+```
+
+- `norm`: lowercases the text and collapses every run of characters that aren't letters or digits into one space. This makes matching robust to how the tokenizer decodes text, e.g. `£3,000` becomes `£3, 000`.
+- `invalid_keywords`: returns the IDs of answerable items whose `keyword` appears in no chunk from their `source`. If it isn't empty, the eval stops before scoring, because a miss would mean a bad label, not bad retrieval.
+- `rank_of_answer`: the 1-based rank of the first relevant chunk when **all** chunks are ranked the same way `retrieve()` ranks them, or `None` if no chunk is relevant.
+- `evaluate_retrieval`:
+  - Scores answerable questions only.
+  - Returns `recall@{k}` for each `k` and `mrr`, each in `[0, 1]`.
+  - Also returns `recall@3/{source}` for each document.
+  - With one relevant passage per question, recall@k is the hit rate at k.
+- The CLI options:
+  - `--chunk-size` rebuilds the index through `RAGBot(chunk_size_tokens=N)`, without patching the class at runtime.
+  - `--show` prints the top 3 chunks for every miss at k=3.
 - Results are deterministic: the same code, data and model always give the same metrics.
-- **CI gate** (`tests/test_eval_retrieval.py`): each metric must be ≥ `eval/baselines/retrieval.json` value − 0.02.
-- The baseline is updated only deliberately, by running `python -m eval.retrieval --update-baseline` and committing the result, so every change to it is visible in the PR diff.
+- **CI gate** (`tests/test_eval_retrieval.py`):
+  - `invalid_keywords(...) == []`.
+  - `recall@3` and `mrr` must each be ≥ the value in `eval/baselines/retrieval.json` − 0.02.
+- The baseline is updated only deliberately, with `--update-baseline` and a commit, so every change to it is visible in the PR diff.
 
 ### Citation checks — `eval/checks.py`
 

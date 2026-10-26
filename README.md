@@ -87,7 +87,7 @@ The tests use the real embedding model and a mocked OpenAI client, so they make 
 
 | What | Tool | Where it runs |
 |---|---|---|
-| Retrieval quality: Recall@3, MRR, nDCG@3 against hand-labelled qrels | [`ranx`](https://github.com/AmenRa/ranx) | CI, on every push. Fails if a metric drops below `eval/baselines/retrieval.json` |
+| Retrieval quality: Recall@k and MRR over 50 questions, each with a keyword that marks its answer passage | plain Python (`eval/retrieval.py`) | CI, on every push. Fails if a metric drops below `eval/baselines/retrieval.json` |
 | Citation validity | plain Python | CI, on every push |
 | Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm_eval`, then `mlflow ui` |
 

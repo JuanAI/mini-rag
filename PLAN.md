@@ -42,7 +42,7 @@ Tests first, using a fake tokeniser so they run in milliseconds:
 - [ ] Text that fits in one chunk → exactly one chunk.
 - [ ] Blank text → `[]`.
 - [ ] Invalid size or overlap → `ValueError`.
-- [ ] `source == str(path)`, and `chunk_id == f"{path}:{i}"`, so chunking the same text twice gives identical IDs.
+- [ ] `source == str(path)`, and `chunk_id`s are unique.
 - [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
 
 One test with the real model:
@@ -50,7 +50,7 @@ One test with the real model:
 
 Implementation and cleanup:
 - [ ] Remove `clean_form_text`, which is never called, or fold anything useful from it into `lint_text`.
-- [ ] Make the chunk size and overlap constructor arguments with the current defaults, so tests don't have to modify attributes.
+- [ ] Make the chunk size and overlap constructor arguments with the current defaults, and pass `chunk_size_tokens` through `RAGBot.__init__`. The retrieval eval's `--chunk-size` option depends on this.
 
 **Done when**: the chunker tests pass, and the boundary cases are tested explicitly.
 
@@ -108,18 +108,25 @@ Tests first:
 
 ## Step 7 — Retrieval eval (CI)
 
-- [ ] Add `requirements-dev.txt` containing `pytest` and `ranx`.
-- [ ] Write `eval/dataset.jsonl`: about 30 questions, roughly 10 per document, plus about 5 unanswerable ones. Have an LLM draft the qrels, then review every label by hand.
+- [ ] Add `requirements-dev.txt` containing `pytest`. No retrieval-eval library is needed.
+- [ ] Port the 50 questions from the earlier `eval_recall.py` into `eval/dataset.jsonl` (`id`, `question`, `answer_type`, `keyword`, `source`, `expected_answer`). Add about 5 unanswerable questions.
 
 Tests first:
-- [ ] Every `chunk_id` in `qrels` exists in the index built from `data/`.
+- [ ] `norm("£3,000")`, `norm("MIL-STD-1815")` → `"3 000"`, `"mil std 1815"`.
+- [ ] `invalid_keywords(bot, dataset) == []`.
+- [ ] `rank_of_answer`:
+  - with a fake index → the expected rank;
+  - when the keyword exists only in another document → `None`.
+- [ ] `evaluate_retrieval`:
+  - every metric is in `[0, 1]`, and `recall@k` never decreases as k grows;
+  - a second run gives the same numbers.
 - [ ] `invalid_citations("A [1] B [4]", 3) == [4]`, plus `[0]`, no citations, and repeated citations.
-- [ ] `evaluate_retrieval` returns all three metrics in `[0, 1]`, and gives the same numbers on a second run.
-- [ ] Every metric is ≥ baseline − 0.02.
+- [ ] `recall@3` and `mrr` are each ≥ baseline − 0.02.
 
 Then:
-- [ ] Implement `eval/retrieval.py` and `eval/checks.py`.
+- [ ] Implement `eval/retrieval.py` by adapting `eval_recall.py` to mini-rag's API (`TokenChunker`, `chunk_id`, `RAGBot(chunk_size_tokens=...)`). Then implement `eval/checks.py`.
 - [ ] Generate `eval/baselines/retrieval.json` and commit it.
+- [ ] Optional: run `--chunk-size` at 80, 120, 200 and 256 and record the results in the README, to justify the default.
 
 **Done when**: `pytest` runs the retrieval gate in seconds, with no API keys.
 
