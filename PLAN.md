@@ -12,14 +12,16 @@ Steps 1–4 and 7 run without API keys. Step 5 tests mock OpenAI. Only step 8 ca
 
 ---
 
-## Step 0 — Environment and baseline
+## Step 0 — Environment and baseline ✅
 
-- [ ] `python -m venv .venv && pip install -r requirements.txt`
-- [ ] `cp .env.example .env` (the key can stay empty for now)
-- [ ] Run `python -m unittest -v test_rag` and write down what passes and fails as the starting point.
-- [ ] Split the tests into `tests/test_parser.py`, `tests/test_chunker.py`, `tests/test_rag.py` and `tests/test_cli.py`, with a shared fixture that loads the embedding model once per session.
+- [x] `python -m venv .venv && pip install -r requirements-dev.txt`
+- [x] `cp .env.example .env`. The key stays empty for now; retrieval and tests don't need it.
+- [x] Set up the test layout: `tests/` holds the tests, and `tests/conftest.py` provides a `bot` fixture (scoped to the session, so the model loads once) and an `empty_bot` fixture that shares the model. `pyproject.toml` sets `pythonpath` and `testpaths`.
+- [x] Check that `pytest` runs. It collects no tests yet: Steps 1–6 add each module together with its tests.
 
-**Done when**: the environment installs cleanly and the test suite runs, even if some tests fail.
+No application code is committed in this step. The earlier prototype is kept only as local reference; each module is rebuilt test-first in its own step.
+
+**Done when**: the dependencies install cleanly and `pytest` runs. ✅
 
 ## Step 1 — Parsing (`parser.py`)
 
