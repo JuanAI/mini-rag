@@ -33,21 +33,6 @@ class Document:
 - `Chunk.chunk_id` is unique within an index. Evaluation never refers to it, so it doesn't need to stay the same across runs (see [Evaluation](#evaluation--eval)).
 - A `Document` has at least one `Page`.
 
-## Text cleanup — `parsing.py`
-
-```python
-def lint_text(text: str) -> str
-```
-
-- **Post**:
-  - Line endings are `\n` (`\r\n` and `\r` are converted).
-  - Non-printable characters are removed, except whitespace.
-  - Runs of spaces and tabs become a single space.
-  - Two or more blank lines become a single blank line, so paragraph breaks survive.
-  - Leading and trailing whitespace is stripped.
-- **Post**: running it twice gives the same result as running it once.
-- A blank input returns `""`; it never raises.
-
 ## Parsers — `parsing.py`
 
 ```python
@@ -67,7 +52,7 @@ class ParserFactory:
 
 - `TxtParser.parse_file`
   - **Pre**: the file exists and is UTF-8.
-  - **Post**: returns `Document(pages=[Page(1, lint_text(content))], file_type="txt")`.
+  - **Post**: returns `Document(pages=[Page(1, content)], file_type="txt")`. The text is **not** altered: the tokenizer already ignores extra whitespace and control characters, so cleaning it here changed nothing (measured: identical token IDs for all three data files).
   - **Raises**: `FileNotFoundError` or `UnicodeDecodeError`, passed straight through.
 - `ParserFactory.supports`: checks the extension case-insensitively, so `.TXT` counts. It never raises and never reads the file.
 - `ParserFactory.get_parser`
@@ -80,13 +65,13 @@ class ParserFactory:
 class Tokeniser:
     max_tokens: int
     def __init__(self, model: SentenceTransformer) -> None: ...
-    def encode(self, text: str) -> list[int]: ...
-    def decode(self, tokens: list[int]) -> str: ...
+    def encode(self, text: str) -> tuple[list[int], list[tuple[int, int]]]: ...
 ```
 
 - `max_tokens == model.max_seq_length - tokenizer.num_special_tokens_to_add()`. This is the largest chunk the model can embed without truncation.
+- `encode` returns token IDs together with each token's `(start, end)` character position in `text`. Both lists are the same length.
 - `encode` adds no special tokens and does no truncation, so whole documents can be longer than the model limit.
-- `decode` skips special tokens.
+- There is no `decode`. Decoding gives back lowercased text with line breaks removed, so chunk text is cut from the original string using the positions instead.
 
 ## Chunking — `chunker.py`
 
@@ -106,6 +91,7 @@ class TokenChunker:
   - Consecutive chunks share exactly `overlap` tokens.
   - The last chunk ends at token `n`, and no chunk lies entirely inside the previous one.
   - Every chunk has at most `chunk_size_tokens` tokens, and so at most `tokeniser.max_tokens`.
+  - Chunk text is `text[start of its first token : end of its last token]`: an exact slice of the original, so capital letters, punctuation and line breaks are kept.
   - Every chunk has `source == str(path)` and a fresh `chunk_id`.
 - Worked example: 12 tokens, size 5, overlap 1 → `[0..4] [4..8] [8..11]`.
 

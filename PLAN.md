@@ -26,16 +26,16 @@ No application code is committed in this step. The earlier prototype is kept onl
 ## Step 1 — Parsing (`parsing.py`) ✅
 
 Tests first:
-- [x] `lint_text`: CRLF/CR → LF, tabs and runs of spaces collapse, three or more newlines become one blank line, non-printable characters are removed, the output is stripped, and running it twice changes nothing.
-- [x] `TxtParser.parse_file`: returns one page, `page_number == 1`, `file_type == "txt"`, and the text is the linted content.
+- [x] `TxtParser.parse_file`: returns one page, `page_number == 1`, `file_type == "txt"`, and the text exactly as it is in the file.
 - [x] `ParserFactory.supports`: `.txt` and `.TXT` → `True`; `.md` and files with no extension → `False`.
 - [x] `ParserFactory.get_parser`: raises `NotImplementedError` for unsupported files.
 
 Implementation and cleanup:
 - [x] Rename `txtParser` to `TxtParser`.
 - [x] Remove the fields nobody uses from `Page` (`chunks`, `embeddings`) and the `numpy` import.
+- [x] Drop the old `lint_text` cleanup. Measured on the three data files, the token IDs are identical with and without it, because the tokenizer already does the same cleanup.
 
-**Done when**: all parser tests pass with no model loaded. ✅ 26 passed in 0.01 s.
+**Done when**: all parser tests pass with no model loaded. ✅ 11 passed in 0.01 s.
 
 ## Step 2 — Chunking (`chunker.py`)
 
@@ -46,13 +46,15 @@ Tests first, using a fake tokeniser so they run in milliseconds:
 - [ ] Invalid size or overlap → `ValueError`.
 - [ ] `source == str(path)`, and `chunk_id`s are unique.
 - [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
+- [ ] Chunk text is an exact slice of the original text: `"Title\n\nBody"` stays `"Title\n\nBody"`, not `"title body"`.
 
 One test with the real model:
 - [ ] Create `tests/conftest.py` with a session-scoped `model` fixture, so the embedding model loads once per test run.
 - [ ] Every chunk of `data/*.txt` re-encodes to no more than `max_seq_length` tokens.
 
 Implementation and cleanup:
-- [ ] Remove `clean_form_text`, which is never called, or fold anything useful from it into `lint_text`.
+- [ ] Leave out the old `clean_form_text`, which was never called.
+- [ ] Cut chunks from the original text using the tokenizer's character positions (`return_offsets_mapping=True`), instead of decoding tokens.
 - [ ] Make the chunk size and overlap constructor arguments with the current defaults, and pass `chunk_size_tokens` through `RAGBot.__init__`. The retrieval eval's `--chunk-size` option depends on this.
 
 **Done when**: the chunker tests pass, and the boundary cases are tested explicitly.

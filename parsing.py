@@ -1,18 +1,7 @@
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID
-
-
-def lint_text(text: str) -> str:
-    """Normalise whitespace and drop non-printable characters, keeping paragraph breaks."""
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = "".join(c for c in text if c.isprintable() or c.isspace())
-    text = re.sub(r"[ \t]+", " ", text)
-    # Any run of blank (or whitespace-only) lines becomes a single paragraph break.
-    text = re.sub(r"\n[ \t]*\n(?:[ \t]*\n)*", "\n\n", text)
-    return text.strip()
 
 
 @dataclass
@@ -47,7 +36,7 @@ class TxtParser(Parser):
 
     def parse_file(self, file_path: Path) -> Document:
         text = file_path.read_text(encoding="utf-8")
-        return Document(pages=[Page(page_number=1, text=lint_text(text))], file_type=self.file_type)
+        return Document(pages=[Page(page_number=1, text=text)], file_type=self.file_type)
 
 
 class ParserFactory:
