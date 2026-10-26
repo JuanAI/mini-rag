@@ -37,31 +37,32 @@ Implementation and cleanup:
 
 **Done when**: all parser tests pass with no model loaded. ✅ 11 passed in 0.01 s.
 
-## Step 2 — Chunking (`chunker.py`)
+## Step 2 — Chunking (`chunker.py`) ✅
 
 Tests first, using a fake tokeniser so they run in milliseconds:
-- [ ] 12 tokens, size 5, overlap 20% → windows `[0..4] [4..8] [8..11]`.
-- [ ] Text that fits in one chunk → exactly one chunk.
-- [ ] Blank text → `[]`.
-- [ ] Invalid size or overlap → `ValueError`.
-- [ ] `source == str(path)`, and `chunk_id`s are unique.
-- [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
-- [ ] Chunk text is an exact slice of the original text: `"Title\n\nBody"` stays `"Title\n\nBody"`, not `"title body"`.
+- [x] 12 tokens, size 5, overlap 20% → windows `[0..4] [4..8] [8..11]`.
+- [x] Text that fits in one chunk → exactly one chunk.
+- [x] Blank text → `[]`.
+- [x] Invalid size or overlap → `ValueError`.
+- [x] `source == str(path)`, and `chunk_id`s are unique.
+- [x] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
+- [x] Chunk text is an exact slice of the original text: `"Title\n\nBody"` stays `"Title\n\nBody"`, not `"title body"`.
 
 One test with the real model:
-- [ ] Create `tests/conftest.py` with a session-scoped `model` fixture, so the embedding model loads once per test run.
-- [ ] Every chunk of `data/*.txt` re-encodes to no more than `max_seq_length` tokens.
+- [x] Create `tests/conftest.py` with a session-scoped `model` fixture, so the embedding model loads once per test run.
+- [x] Every chunk of `data/*.txt` re-encodes to no more than `max_seq_length` tokens.
 
 Implementation and cleanup:
-- [ ] Leave out the old `clean_form_text`, which was never called.
-- [ ] Cut chunks from the original text using the tokenizer's character positions (`return_offsets_mapping=True`), instead of decoding tokens.
-- [ ] Make the chunk size and overlap constructor arguments with the current defaults, and pass `chunk_size_tokens` through `RAGBot.__init__`. The retrieval eval's `--chunk-size` option depends on this.
+- [x] Leave out the old `clean_form_text`, which was never called.
+- [x] Cut chunks from the original text using the tokenizer's character positions (`return_offsets_mapping=True`), instead of decoding tokens.
+- [x] Make the chunk size and overlap constructor arguments with the current defaults. Invalid values are rejected when the chunker is created.
 
-**Done when**: the chunker tests pass, and the boundary cases are tested explicitly.
+**Done when**: the chunker tests pass, and the boundary cases are tested explicitly. ✅ 20 chunker tests (31 in total) pass in ~4 s. The data files give 73 chunks for Jupiter, with original case and line breaks kept.
 
 ## Step 3 — Indexing (`RAGBot.read_and_embed_data`)
 
 Tests first:
+- [ ] `RAGBot(chunk_size_tokens=N)` passes `N` to its `TokenChunker`. The retrieval eval's `--chunk-size` option depends on this.
 - [ ] Add a session-scoped `bot` fixture to `tests/conftest.py` (built on `model`, indexed over `data/`), and an `empty_bot` fixture that shares the model but has its own empty index.
 - [ ] Indexing the sample `data/` gives `len(chunks) == embeddings.shape[0]`, and every row has norm 1.
 - [ ] Sources are relative (`"jupiter.txt"`, not `"data/jupiter.txt"`).
