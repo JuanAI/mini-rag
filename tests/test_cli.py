@@ -19,6 +19,8 @@ class FakeBot:
         self.folder = folder_path
 
     def ask(self, question):
+        if question == "fail":
+            raise Exception("Error raised from OpenAI model Error code: 401 - key expired")
         return f"answer to {question}"
 
 
@@ -40,6 +42,14 @@ def test_answers_each_question(capsys):
     out = capsys.readouterr().out
     assert "Hi, I'm your RAGBot. Ask me anything about Jupiter, Ada Lovelace, or CRISPR" in out
     assert "RAGBot: answer to What is CRISPR?\n" in out
+    assert "RAGBot: answer to Who was Ada?\n" in out
+
+
+def test_failed_request_is_reported_and_the_session_continues(capsys):
+    run_main(["fail", "Who was Ada?", EOFError()])
+
+    out = capsys.readouterr().out
+    assert "RAGBot: Sorry, that request failed: Error raised from OpenAI model Error code: 401 - key expired\n" in out
     assert "RAGBot: answer to Who was Ada?\n" in out
 
 

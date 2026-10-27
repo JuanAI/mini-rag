@@ -16,5 +16,9 @@ if __name__ == "__main__":
         except (EOFError, KeyboardInterrupt):  # Ctrl-D / Ctrl-C ends the session
             print()
             break
-        response = rag.ask(question=question)
+        try:
+            response = rag.ask(question=question)
+        except Exception as exc:  # a failed API call shouldn't end the session
+            print(f"RAGBot: Sorry, that request failed: {exc}\n")
+            continue
         print(f"RAGBot: {response}\n")

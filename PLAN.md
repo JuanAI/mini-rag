@@ -107,19 +107,24 @@ Manual check with a real key:
 
 ## Step 4 — CLI (`main.py`) ✅
 
-`main.py` comes from the earlier version of this project, with one addition: Ctrl-D or Ctrl-C ends the session cleanly instead of printing a traceback. It runs from the repo root, because `data/` and `models/` are relative paths.
+`main.py` comes from the earlier version of this project, with two additions:
+- Ctrl-D or Ctrl-C ends the session cleanly instead of printing a traceback.
+- A failed request (e.g. an expired API key) is reported and the session continues.
 
-Tests first (`tests/test_cli.py`, 4):
+ It runs from the repo root, because `data/` and `models/` are relative paths.
+
+Tests first (`tests/test_cli.py`, 5):
 - [x] With a fake bot, each question gets `RAGBot: {answer}` and the greeting is printed.
 - [x] Ctrl-D (`EOFError`) and Ctrl-C (`KeyboardInterrupt`) end the loop without an exception. Both failed against the exact copy.
 - [x] A real run from the repo root with empty stdin exits with status 0 and no traceback.
+- [x] When `ask()` raises, `RAGBot: Sorry, that request failed: …` is printed and the next question is still answered. Found in a real run with an expired key.
 
 VS Code setup (`.vscode/`, from the earlier version of this project):
 - [x] `launch.json`: a "RAGBot: main.py" run configuration that uses `.venv`, the integrated terminal (for the input loop) and the repo root as working directory.
 - [x] `settings.json`: `.venv` as the interpreter, and the Test Explorer running pytest on `tests/`.
 - [x] Comments give the real setup commands (`python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`), not `make venv`.
 
-**Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 39 passed in ~7 s (9 parser + 11 chunker + 15 rag + 4 cli).
+**Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 40 passed in ~7 s (9 parser + 11 chunker + 15 rag + 5 cli).
 
 ## Step 5 — Retrieval eval (CI)
 
