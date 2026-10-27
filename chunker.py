@@ -1,57 +1,47 @@
+from dataclasses import dataclass
+from sentence_transformers import SentenceTransformer
+from transformers import BertTokenizer
 from pathlib import Path
-from uuid import uuid4
 
-from parsing import Chunk
-
+@dataclass
+class Chunk:
+    id: int 
+    text: str
+    source: str
 
 class Tokeniser:
-    def __init__(self, model) -> None:
-        self.tokenizer = model.tokenizer
-        if not self.tokenizer.is_fast:
-            raise ValueError("A fast tokenizer is required: chunking needs character positions.")
-        self.max_tokens = model.max_seq_length - self.tokenizer.num_special_tokens_to_add()
+    def __init__(self, model: SentenceTransformer) -> None:
+        self.tokeniser: BertTokenizer  = model.tokenizer
 
-    def encode(self, text: str) -> tuple[list[int], list[tuple[int, int]]]:
-        # Full documents may exceed the model limit; only their chunks get embedded.
-        encoding = self.tokenizer(
-            text,
-            add_special_tokens=False,
-            truncation=False,
-            return_offsets_mapping=True,
-            verbose=False,
-        )
-        return encoding["input_ids"], encoding["offset_mapping"]
+    def encode(self, text: str) -> list[int]:
+        return self.tokeniser.encode(text,add_special_tokens=False)
+
+    def decode(self, tokens: list[int]) -> str:
+        return self.tokeniser.decode(tokens, skip_special_tokens=True)
 
 
-class TokenChunker:
-    def __init__(
-        self,
-        tokeniser: Tokeniser,
-        chunk_size_tokens: int = 200,
-        chunk_overlap_percentage: float = 0.2,
-    ) -> None:
-        if chunk_size_tokens <= 0 or not 0 <= chunk_overlap_percentage < 1:
-            raise ValueError("Chunk size must be positive and overlap must be in [0, 1).")
-        self.tokeniser = tokeniser
-        self.chunk_size_tokens = min(chunk_size_tokens, tokeniser.max_tokens)
-        self.chunk_overlap_percentage = chunk_overlap_percentage
+class Chunker:
+    def __init__(self, model: SentenceTransformer) -> None:
+        self.tokeniser = Tokeniser(model)
+        self.chunk_size = 80
+        self.chunk_overlap = 0.2
 
-    def chunk(self, text: str, path: Path | str = "") -> list[Chunk]:
-        _, spans = self.tokeniser.encode(text)
-        overlap_tokens = int(self.chunk_size_tokens * self.chunk_overlap_percentage)
+    def get_chunks(self, text: str, path: Path) -> list[Chunk]:
+        tokens = self.tokeniser.encode(text)
+        overlap_tokens = int(self.chunk_overlap * self.chunk_size)
 
-        chunks: list[Chunk] = []
         start = 0
-        while start < len(spans):
-            end = min(start + self.chunk_size_tokens, len(spans))
-            # Slice the original text so case, punctuation and line breaks survive.
-            chunks.append(Chunk(
-                text=text[spans[start][0]:spans[end - 1][1]],
-                chunk_id=uuid4(),
-                source=str(path),
-            ))
-            if end == len(spans):
-                break
+        idx = 0
+        chunks = []
+
+        while start < len(tokens):
+            end = start + min(self.chunk_size + overlap_tokens, len(tokens))
+            chunks.append(Chunk(id=idx,text=self.tokeniser.decode(tokens[start:end]), source=str(path)))
+
+            if end == len(tokens):
+                break 
+
             start = end - overlap_tokens
+            idx += 1
 
         return chunks

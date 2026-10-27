@@ -1,108 +1,102 @@
-import re
 from pathlib import Path
+from types import SimpleNamespace
 
-import pytest
-
-from chunker import TokenChunker, Tokeniser
+from chunker import Chunk, Chunker, Tokeniser
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 
-class FakeTokeniser:
-    """One token per whitespace-separated word, with real character positions."""
+class FakeTokenizer:
+    """One token per whitespace-separated word; decoding joins the words back with spaces."""
 
-    def __init__(self, max_tokens: int = 512) -> None:
-        self.max_tokens = max_tokens
+    def __init__(self) -> None:
+        self.vocab: list[str] = []
 
-    def encode(self, text: str) -> tuple[list[int], list[tuple[int, int]]]:
-        spans = [m.span() for m in re.finditer(r"\S+", text)]
-        return list(range(len(spans))), spans
+    def encode(self, text, add_special_tokens=True):
+        ids = []
+        for word in text.split():
+            if word not in self.vocab:
+                self.vocab.append(word)
+            ids.append(self.vocab.index(word))
+        return ids
+
+    def decode(self, tokens, skip_special_tokens=False):
+        return " ".join(self.vocab[t] for t in tokens)
+
+
+def fake_model():
+    return SimpleNamespace(tokenizer=FakeTokenizer())
 
 
 def words(n: int) -> str:
     return " ".join(f"t{i}" for i in range(n))
 
 
-class TestTokenChunker:
-    def test_windows_overlap_and_stop_at_last_token(self):
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=5, chunk_overlap_percentage=0.2)
+class TestChunker:
+    def test_defaults(self):
+        chunker = Chunker(fake_model())
+        assert (chunker.chunk_size, chunker.chunk_overlap) == (80, 0.2)
 
-        chunks = chunker.chunk(words(12))
+    def test_windows_are_size_plus_overlap_and_step_by_size(self):
+        # size 5, overlap int(0.2 * 5) = 1: each window holds 6 tokens and starts 5 after the last.
+        chunker = Chunker(fake_model())
+        chunker.chunk_size = 5
+
+        chunks = chunker.get_chunks(words(12), Path("a.txt"))
 
         assert [c.text for c in chunks] == [
-            "t0 t1 t2 t3 t4", "t4 t5 t6 t7 t8", "t8 t9 t10 t11",
+            "t0 t1 t2 t3 t4 t5", "t5 t6 t7 t8 t9 t10", "t10 t11",
         ]
 
+    def test_default_windows(self):
+        # 200 tokens with the defaults: windows of 96 tokens starting at 0, 80 and 160.
+        chunks = Chunker(fake_model()).get_chunks(words(200), Path("a.txt"))
+
+        assert [len(c.text.split()) for c in chunks] == [96, 96, 40]
+        assert [c.text.split()[0] for c in chunks] == ["t0", "t80", "t160"]
+
+    def test_consecutive_chunks_share_the_overlap(self):
+        chunks = Chunker(fake_model()).get_chunks(words(200), Path("a.txt"))
+        for previous, current in zip(chunks, chunks[1:]):
+            assert previous.text.split()[-16:] == current.text.split()[:16]
+
     def test_text_that_fits_gives_one_chunk(self):
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=5)
-        assert [c.text for c in chunker.chunk(words(5))] == [words(5)]
+        chunks = Chunker(fake_model()).get_chunks(words(50), Path("a.txt"))
+        assert [c.text for c in chunks] == [words(50)]
 
-    def test_exact_multiple_has_no_redundant_tail(self):
-        # 9 tokens, size 5, overlap 1: [0..4] [4..8]; a third chunk would sit inside the second.
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=5, chunk_overlap_percentage=0.2)
-        assert [c.text for c in chunker.chunk(words(9))] == ["t0 t1 t2 t3 t4", "t4 t5 t6 t7 t8"]
+    def test_blank_text_gives_no_chunks(self):
+        assert Chunker(fake_model()).get_chunks("  \n ", Path("a.txt")) == []
 
-    def test_zero_overlap(self):
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=2, chunk_overlap_percentage=0)
-        assert [c.text for c in chunker.chunk(words(5))] == ["t0 t1", "t2 t3", "t4"]
+    def test_ids_count_from_zero_and_source_is_the_path(self):
+        chunker = Chunker(fake_model())
+        chunker.chunk_size = 5
 
-    @pytest.mark.parametrize("blank", ["", "   ", "\n\t\n"])
-    def test_blank_text_gives_no_chunks(self, blank):
-        assert TokenChunker(FakeTokeniser()).chunk(blank) == []
+        chunks = chunker.get_chunks(words(12), Path("docs/a.txt"))
 
-    @pytest.mark.parametrize("size, overlap", [(0, 0.2), (-1, 0.2), (5, -0.1), (5, 1.0), (5, 1.5)])
-    def test_invalid_settings_raise(self, size, overlap):
-        with pytest.raises(ValueError):
-            TokenChunker(FakeTokeniser(), chunk_size_tokens=size, chunk_overlap_percentage=overlap)
-
-    def test_size_is_capped_by_model_limit(self):
-        assert TokenChunker(FakeTokeniser(max_tokens=50), chunk_size_tokens=200).chunk_size_tokens == 50
-
-    def test_defaults(self):
-        chunker = TokenChunker(FakeTokeniser())
-        assert (chunker.chunk_size_tokens, chunker.chunk_overlap_percentage) == (200, 0.2)
-
-    def test_text_is_an_exact_slice_of_the_original(self):
-        text = "Title\n\nBody   Text,\twith Capitals.\nEnd"
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=3, chunk_overlap_percentage=0)
-
-        chunks = chunker.chunk(text)
-
-        assert [c.text for c in chunks] == ["Title\n\nBody   Text,", "with Capitals.\nEnd"]
-        assert all(c.text in text for c in chunks)
-
-    def test_source_and_unique_ids(self):
-        chunker = TokenChunker(FakeTokeniser(), chunk_size_tokens=3)
-        chunks = chunker.chunk(words(10), Path("docs/a.txt"))
-
+        assert [c.id for c in chunks] == [0, 1, 2]
         assert {c.source for c in chunks} == {str(Path("docs/a.txt"))}
-        assert len({c.chunk_id for c in chunks}) == len(chunks)
 
-    def test_source_defaults_to_empty(self):
-        assert TokenChunker(FakeTokeniser()).chunk("a b")[0].source == ""
+    def test_ids_restart_for_each_document(self):
+        chunker = Chunker(fake_model())
+        assert chunker.get_chunks("a b", Path("a.txt"))[0].id == 0
+        assert chunker.get_chunks("c d", Path("b.txt"))[0].id == 0
+
+    def test_chunk_fields(self):
+        assert Chunk(id=0, text="t", source="a.txt") == Chunk(0, "t", "a.txt")
 
 
 class TestWithRealModel:
-    def test_tokeniser_limit_and_positions(self, model):
+    def test_tokeniser_round_trip(self, model):
         tokeniser = Tokeniser(model)
-        text = "Ada Lovelace met Babbage."
-
-        ids, spans = tokeniser.encode(text)
-
-        assert tokeniser.max_tokens == model.max_seq_length - model.tokenizer.num_special_tokens_to_add()
-        assert len(ids) == len(spans) > 0
-        assert text[spans[0][0]:spans[0][1]].lower() == "ada"
-
-    def test_keeps_case_and_line_breaks(self, model):
-        chunks = TokenChunker(Tokeniser(model)).chunk("Title\n\nBody Text")
-        assert [c.text for c in chunks] == ["Title\n\nBody Text"]
+        ids = tokeniser.encode("Ada Lovelace met Babbage.")
+        assert model.tokenizer.cls_token_id not in ids
+        assert tokeniser.decode(ids) == "ada lovelace met babbage."
 
     def test_every_data_chunk_fits_the_model(self, model):
-        tokeniser = Tokeniser(model)
-        chunker = TokenChunker(tokeniser)
+        chunker = Chunker(model)
+        limit = model.max_seq_length - model.tokenizer.num_special_tokens_to_add()
         for path in sorted(DATA_DIR.glob("*.txt")):
-            text = path.read_text(encoding="utf-8")
-            for chunk in chunker.chunk(text, path.name):
-                assert chunk.text in text
-                ids, _ = tokeniser.encode(chunk.text)
-                assert len(ids) <= tokeniser.max_tokens, (path.name, chunk.text[:60])
+            chunks = chunker.get_chunks(path.read_text(encoding="utf-8"), Path(path.name))
+            assert chunks
+            for chunk in chunks:
+                assert len(model.tokenizer.encode(chunk.text, add_special_tokens=False)) <= limit
