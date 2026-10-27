@@ -105,18 +105,26 @@ Manual check with a real key:
 
 **Done when**: the mocked tests pass offline (✅ 35 passed in ~5 s: 9 parser + 11 chunker + 15 rag), and the manual check answers correctly with correct citations.
 
-## Step 4 — CLI (`main.py`)
+## Step 4 — CLI (`main.py`) ✅
 
-Tests first:
-- [ ] Running from another working directory still finds `data/`.
-- [ ] EOF on stdin → exits with status 0 and no traceback.
+`main.py` comes from the earlier version of this project, with two additions:
+- Ctrl-D or Ctrl-C ends the session cleanly instead of printing a traceback.
+- A failed request (e.g. an expired API key) is reported and the session continues.
+
+ It runs from the repo root, because `data/` and `models/` are relative paths.
+
+Tests first (`tests/test_cli.py`, 5):
+- [x] With a fake bot, each question gets `RAGBot: {answer}` and the greeting is printed.
+- [x] Ctrl-D (`EOFError`) and Ctrl-C (`KeyboardInterrupt`) end the loop without an exception. Both failed against the exact copy.
+- [x] A real run from the repo root with empty stdin exits with status 0 and no traceback.
+- [x] When `ask()` raises, `RAGBot: Sorry, that request failed: …` is printed and the next question is still answered. Found in a real run with an expired key.
 
 VS Code setup (`.vscode/`, from the earlier version of this project):
-- [ ] `launch.json`: a "RAGBot: main.py" run configuration that uses `.venv`, the integrated terminal (for the input loop) and the repo root as working directory.
-- [ ] `settings.json`: `.venv` as the interpreter, and the Test Explorer running pytest on `tests/`.
-- [ ] Comments give the real setup commands (`python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`), not `make venv`.
+- [x] `launch.json`: a "RAGBot: main.py" run configuration that uses `.venv`, the integrated terminal (for the input loop) and the repo root as working directory.
+- [x] `settings.json`: `.venv` as the interpreter, and the Test Explorer running pytest on `tests/`.
+- [x] Comments give the real setup commands (`python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`), not `make venv`.
 
-**Done when**: `python main.py` works from both the repo root and elsewhere, and the VS Code run button starts the bot.
+**Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 40 passed in ~7 s (9 parser + 11 chunker + 15 rag + 5 cli).
 
 ## Step 5 — Retrieval eval (CI)
 

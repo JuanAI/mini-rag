@@ -32,6 +32,7 @@ mini-rag/
 ├── rag.py           # RAGBot: index, retrieve, ask
 ├── models/          # bundled all-MiniLM-L6-v2 embedding model (~87 MB)
 ├── main.py          # interactive CLI
+├── .vscode/         # run configuration and test settings for VS Code
 ├── eval/            # eval dataset, retrieval metrics, LLM judge eval
 └── tests/           # pytest suite (real embedding model, mocked OpenAI)
 ```
@@ -61,9 +62,13 @@ The embedding model is bundled in `models/all-MiniLM-L6-v2`, so nothing is downl
 
 ## Usage
 
+From the repo root:
+
 ```bash
 python main.py
 ```
+
+Or, in VS Code, open the folder and press **F5**. The "RAGBot: main.py" configuration uses `.venv` and the integrated terminal. Ctrl-D or Ctrl-C ends the session.
 
 Ask about anything in `data/`. To use your own documents, drop `.txt` files into `data/`.
 
