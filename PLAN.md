@@ -43,31 +43,33 @@ Implementation and cleanup:
 - `Chunk` moves to `chunker.py`.
 - `tests/test_parsing.py` was rewritten to match: 9 tests.
 
-## Step 2 — Chunking (`chunker.py`)
+## Step 2 — Chunking (`chunker.py`) ✅
 
-Tests first, using a fake tokeniser so they run in milliseconds:
-- [ ] 12 tokens, size 5, overlap 20% → windows `[0..4] [4..8] [8..11]`.
-- [ ] Text that fits in one chunk → exactly one chunk.
-- [ ] Blank text → `[]`.
-- [ ] Invalid size or overlap → `ValueError`.
-- [ ] `source == str(path)`, and `chunk_id`s are unique.
-- [ ] No chunk lies entirely inside the previous one, and the last chunk ends at the last token.
-- [ ] Chunk text is an exact slice of the original text: `"Title\n\nBody"` stays `"Title\n\nBody"`, not `"title body"`.
+`chunker.py` is the chunker from the earlier version of this project, copied exactly.
 
-One test with the real model:
-- [ ] Create `tests/conftest.py` with a session-scoped `model` fixture, so the embedding model loads once per test run.
-- [ ] Every chunk of `data/*.txt` re-encodes to no more than `max_seq_length` tokens.
+Tests (`tests/test_chunker.py`, 11):
+- [x] Defaults: `chunk_size == 80`, `chunk_overlap == 0.2`.
+- [x] Each window holds `chunk_size + overlap` tokens and starts `chunk_size` tokens after the previous one. Size 5 → `[0..5] [5..10] [10..11]`; 200 tokens with the defaults → windows of 96, 96 and 40 starting at 0, 80 and 160.
+- [x] Consecutive chunks share exactly `overlap` (16) tokens.
+- [x] Text that fits gives one chunk; blank text gives `[]`.
+- [x] `id` counts from 0 within each document and restarts for the next one; `source == str(path)`.
+- [x] With the real model:
+  - `Tokeniser` adds no special tokens;
+  - decoding lowercases the text;
+  - every chunk of `data/*.txt` fits the model's limit (at most 99 of 254 tokens).
+- [x] `tests/conftest.py` provides a session-scoped `model` fixture.
 
-Implementation and cleanup:
-- [ ] Leave out the old `clean_form_text`, which was never called.
-- [ ] Cut chunks from the original text using the tokenizer's character positions (`return_offsets_mapping=True`), instead of decoding tokens.
-- [ ] Make the chunk size and overlap constructor arguments with the current defaults, and pass `chunk_size_tokens` through `RAGBot.__init__`. The retrieval eval's `--chunk-size` option depends on this.
+Known behaviour, kept as is:
+- Chunk text is **decoded** from tokens, so it comes out lowercase and without line breaks.
+- `id`s restart at 0 for each file, so they aren't unique across the index. `rag.py` cites `[chunk.id]` plus the source, so a citation needs both.
+- Size and overlap are attributes (`chunker.chunk_size = N`), not constructor arguments.
 
-**Done when**: the chunker tests pass, and the boundary cases are tested explicitly.
+**Done when**: the chunker tests pass. ✅ 20 passed in total (9 parsing + 11 chunker) in ~4 s. The data files give 111, 114 and 147 chunks.
 
 ## Step 3 — Indexing (`RAGBot.read_and_embed_data`)
 
 Tests first:
+- [ ] The retrieval eval's `--chunk-size` option sets `chunker.chunk_size` before indexing.
 - [ ] Add a session-scoped `bot` fixture to `tests/conftest.py` (built on `model`, indexed over `data/`), and an `empty_bot` fixture that shares the model but has its own empty index.
 - [ ] Indexing the sample `data/` gives `len(chunks) == embeddings.shape[0]`, and every row has norm 1.
 - [ ] Sources are relative (`"jupiter.txt"`, not `"data/jupiter.txt"`).
@@ -136,7 +138,7 @@ Tests first:
 - [ ] `recall@3` and `mrr` are each ≥ baseline − 0.02.
 
 Then:
-- [ ] Implement `eval/retrieval.py` by adapting `eval_recall.py` to mini-rag's API (`TokenChunker`, `chunk_id`, `RAGBot(chunk_size_tokens=...)`). Then implement `eval/checks.py`.
+- [ ] Implement `eval/retrieval.py` by adapting `eval_recall.py` to mini-rag's API (`Chunker`, `chunk.id`, `bot.chunker.chunk_size`). Then implement `eval/checks.py`.
 - [ ] Generate `eval/baselines/retrieval.json` and commit it.
 - [ ] Optional: run `--chunk-size` at 80, 120, 200 and 256 and record the results in the README, to justify the default.
 
