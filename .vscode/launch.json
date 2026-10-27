@@ -1,0 +1,23 @@
+{
+  // Create the venv once before using these:
+  //   python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+  // All configs use .venv in this
+  // folder and run from the project root, because rag.py uses relative paths
+  // (data/, models/) and reads .env from the working directory.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The bot as you'd run it from a terminal: python main.py. Interactive
+      // input() loop, so it needs the integrated terminal. Needs .env.
+      "name": "RAGBot: main.py",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": { "TOKENIZERS_PARALLELISM": "false" },
+      "justMyCode": false
+    }
+  ]
+}
