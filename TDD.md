@@ -138,9 +138,13 @@ class RAGBot:
 
 ## CLI — `main.py`
 
-- Builds a `RAGBot` and indexes `data/` next to `main.py`, so it works from any working directory.
-- Runs a loop of `Me: ` prompt → `ask()` → `RAGBot: {response}`.
-- EOF (Ctrl-D) or Ctrl-C exits cleanly, with no traceback.
+Taken from the earlier version of this project, plus a clean exit and handling for failed requests.
+
+- Builds a `RAGBot` and indexes `data/`. Both `data/` and `models/` are relative paths, so it must be **run from the repo root**. The VS Code launch configuration does this.
+- Prints a greeting, then loops: `Me:` prompt → `ask(question=...)` → `RAGBot: {response}`.
+- EOF (Ctrl-D) or Ctrl-C ends the session cleanly, with exit status 0 and no traceback.
+- If `ask()` raises (e.g. an expired key or a network error), it prints `RAGBot: Sorry, that request failed: {error}` and waits for the next question, instead of ending the session.
+- Needs an OpenAI or Azure key in `.env`, because `RAGBot()` creates its client on startup.
 
 ## Evaluation — `eval/`
 
