@@ -1,56 +1,37 @@
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 from pathlib import Path
-from uuid import UUID
+import logging
 
-
-@dataclass
-class Chunk:
-    text: str
-    chunk_id: UUID | str
-    source: str = ""
-
-
-@dataclass
-class Page:
-    page_number: int
-    text: str
-
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Document:
-    pages: list[Page]
-    file_type: str
-
+    text: str
+    type: str
 
 class Parser(ABC):
-    file_type: str
+    file_type = None 
 
     @abstractmethod
-    def parse_file(self, file_path: Path) -> Document:
+    def parse(self, path: Path) -> Document:
         pass
 
-
-class TxtParser(Parser):
+class txtParser(Parser):
     file_type = "txt"
 
-    def parse_file(self, file_path: Path) -> Document:
-        text = file_path.read_text(encoding="utf-8")
-        return Document(pages=[Page(page_number=1, text=text)], file_type=self.file_type)
+    def parse(self, path: Path) -> Document:
+        text = path.read_text(encoding="utf-8")
+
+        return Document(text=text, type=self.file_type)
 
 
 class ParserFactory:
-    _parsers: dict[str, type[Parser]] = {TxtParser.file_type: TxtParser}
-
     @staticmethod
-    def _file_type(file_path: Path) -> str:
-        return file_path.suffix.lstrip(".").lower()
+    def get_parser(path: Path) -> Parser | None:
+        file_type = path.suffix.lstrip(".").lower()
 
-    def supports(self, file_path: Path) -> bool:
-        return self._file_type(file_path) in self._parsers
+        if file_type == txtParser.file_type:
+            return txtParser()
 
-    def get_parser(self, file_path: Path) -> Parser:
-        file_type = self._file_type(file_path)
-        if file_type not in self._parsers:
-            raise NotImplementedError(f"No parser implemented for type {file_type!r}")
-        return self._parsers[file_type]()
+        logger.warning(f"File type {file_type} does not have parser")

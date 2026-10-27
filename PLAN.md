@@ -37,6 +37,12 @@ Implementation and cleanup:
 
 **Done when**: all parser tests pass with no model loaded. ✅ 11 passed in 0.01 s.
 
+**Refactor (after Step 1):** `parsing.py` was replaced with the parser from an earlier version of this project:
+- `Document` is just `text` and `type`, and `txtParser.parse()` returns it.
+- `ParserFactory.get_parser()` returns `None` with a warning for unsupported files, instead of raising, and there is no `supports()`.
+- `Chunk` moves to `chunker.py`.
+- `tests/test_parsing.py` was rewritten to match: 9 tests.
+
 ## Step 2 — Chunking (`chunker.py`)
 
 Tests first, using a fake tokeniser so they run in milliseconds:
