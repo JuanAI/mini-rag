@@ -9,55 +9,51 @@ Conventions:
 
 ---
 
-## Data model — `parsing.py`
+## Data model
 
 ```python
+# parsing.py
+@dataclass
+class Document:
+    text: str
+    type: str                 # lowercase extension without the dot, e.g. "txt"
+
+# chunker.py
 @dataclass
 class Chunk:
     text: str
     chunk_id: UUID | str
     source: str = ""
-
-@dataclass
-class Page:
-    page_number: int          # 1-based
-    text: str
-
-@dataclass
-class Document:
-    pages: list[Page]
-    file_type: str            # lowercase extension without the dot, e.g. "txt"
 ```
 
 - `Chunk.source` is the file path **relative to the ingested folder**, e.g. `"jupiter.txt"`, so citations don't leak absolute paths.
 - `Chunk.chunk_id` is unique within an index. Evaluation never refers to it, so it doesn't need to stay the same across runs (see [Evaluation](#evaluation--eval)).
-- A `Document` has at least one `Page`.
+- A `Document` holds the whole file as one text. There are no pages; a format that has them (e.g. PDF) can add them when it's added.
 
 ## Parsers — `parsing.py`
 
 ```python
 class Parser(ABC):
-    file_type: str
+    file_type = None
     @abstractmethod
-    def parse_file(self, file_path: Path) -> Document: ...
+    def parse(self, path: Path) -> Document: ...
 
-class TxtParser(Parser):
+class txtParser(Parser):
     file_type = "txt"
-    def parse_file(self, file_path: Path) -> Document: ...
+    def parse(self, path: Path) -> Document: ...
 
 class ParserFactory:
-    def supports(self, file_path: Path) -> bool: ...
-    def get_parser(self, file_path: Path) -> Parser: ...
+    @staticmethod
+    def get_parser(path: Path) -> Parser | None: ...
 ```
 
-- `TxtParser.parse_file`
+- `txtParser.parse`
   - **Pre**: the file exists and is UTF-8.
-  - **Post**: returns `Document(pages=[Page(1, content)], file_type="txt")`. The text is **not** altered: the tokenizer already ignores extra whitespace and control characters, so cleaning it here changed nothing (measured: identical token IDs for all three data files).
+  - **Post**: returns `Document(text=content, type="txt")`, with the text **unchanged**. The tokenizer already ignores extra whitespace and control characters, so cleaning it here changed nothing (measured: identical token IDs for all three data files).
   - **Raises**: `FileNotFoundError` or `UnicodeDecodeError`, passed straight through.
-- `ParserFactory.supports`: checks the extension case-insensitively, so `.TXT` counts. It never raises and never reads the file.
 - `ParserFactory.get_parser`
-  - **Post**: returns a parser whose `file_type` matches the extension.
-  - **Raises**: `NotImplementedError` if `supports()` would return `False`.
+  - Decides from the extension alone, case-insensitively, so `.TXT` counts. It never reads the file.
+  - **Post**: returns a parser whose `file_type` matches the extension, or **`None`** for an unsupported type, after logging a warning (`"File type … does not have parser"`). It never raises, so callers skip files where it returns `None`.
 
 ## Tokenisation — `chunker.py`
 
