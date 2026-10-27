@@ -111,7 +111,12 @@ Tests first:
 - [ ] Running from another working directory still finds `data/`.
 - [ ] EOF on stdin → exits with status 0 and no traceback.
 
-**Done when**: `python main.py` works from both the repo root and elsewhere.
+VS Code setup (`.vscode/`, from the earlier version of this project):
+- [ ] `launch.json`: a "RAGBot: main.py" run configuration that uses `.venv`, the integrated terminal (for the input loop) and the repo root as working directory.
+- [ ] `settings.json`: `.venv` as the interpreter, and the Test Explorer running pytest on `tests/`.
+- [ ] Comments give the real setup commands (`python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`), not `make venv`.
+
+**Done when**: `python main.py` works from both the repo root and elsewhere, and the VS Code run button starts the bot.
 
 ## Step 5 — Retrieval eval (CI)
 
