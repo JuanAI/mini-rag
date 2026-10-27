@@ -8,7 +8,7 @@ Each step follows the same loop:
 3. **Refactor**: clean up while the tests stay green.
 4. Commit.
 
-Steps 1–4 and 7 run without API keys. Step 5 tests mock OpenAI. Only step 8 calls paid APIs.
+Steps 1–5 run without API keys; Step 3 tests mock OpenAI. Only Step 6 calls paid APIs.
 
 ---
 
@@ -17,13 +17,13 @@ Steps 1–4 and 7 run without API keys. Step 5 tests mock OpenAI. Only step 8 ca
 - [x] `python -m venv .venv && pip install -r requirements-dev.txt`
 - [x] `cp .env.example .env`. The key stays empty for now; retrieval and tests don't need it.
 - [x] Set up the test layout: `tests/` holds the tests, and `pyproject.toml` sets `pythonpath` and `testpaths`. Shared fixtures go into `tests/conftest.py` in the step that first needs them (Steps 2 and 3).
-- [x] Check that `pytest` runs. It collects no tests yet: Steps 1–6 add each module together with its tests.
+- [x] Check that `pytest` runs. It collects no tests yet: Steps 1–4 add each module together with its tests.
 
 No application code is committed in this step. The earlier prototype is kept only as local reference; each module is rebuilt test-first in its own step.
 
 **Done when**: the dependencies install cleanly and `pytest` runs. ✅
 
-## Step 1 — Parsing (`parsing.py`) ✅
+## Step 1 — Parsing (`parser.py`) ✅
 
 Tests first:
 - [x] `TxtParser.parse_file`: returns one page, `page_number == 1`, `file_type == "txt"`, and the text exactly as it is in the file.
@@ -41,7 +41,7 @@ Implementation and cleanup:
 - `Document` is just `text` and `type`, and `txtParser.parse()` returns it.
 - `ParserFactory.get_parser()` returns `None` with a warning for unsupported files, instead of raising, and there is no `supports()`.
 - `Chunk` moves to `chunker.py`.
-- `tests/test_parsing.py` was rewritten to match: 9 tests.
+- `tests/test_parser.py` was rewritten to match: 9 tests.
 
 ## Step 2 — Chunking (`chunker.py`) ✅
 
@@ -64,55 +64,48 @@ Known behaviour, kept as is:
 - `id`s restart at 0 for each file, so they aren't unique across the index. `rag.py` cites `[chunk.id]` plus the source, so a citation needs both.
 - Size and overlap are attributes (`chunker.chunk_size = N`), not constructor arguments.
 
-**Done when**: the chunker tests pass. ✅ 20 passed in total (9 parsing + 11 chunker) in ~4 s. The data files give 111, 114 and 147 chunks.
+**Done when**: the chunker tests pass. ✅ 20 passed in total (9 parser + 11 chunker) in ~4 s. The data files give 111, 114 and 147 chunks.
 
-## Step 3 — Indexing (`RAGBot.read_and_embed_data`)
+## Step 3 — RAG engine (`rag.py`) ✅
 
-Tests first:
-- [ ] The retrieval eval's `--chunk-size` option sets `chunker.chunk_size` before indexing.
-- [ ] Add a session-scoped `bot` fixture to `tests/conftest.py` (built on `model`, indexed over `data/`), and an `empty_bot` fixture that shares the model but has its own empty index.
-- [ ] Indexing the sample `data/` gives `len(chunks) == embeddings.shape[0]`, and every row has norm 1.
-- [ ] Sources are relative (`"jupiter.txt"`, not `"data/jupiter.txt"`).
-- [ ] A temporary folder containing `.DS_Store` and a blank `.txt` → `ValueError`.
-- [ ] Add `planet.TXT` to that folder and index it twice → exactly one chunk.
-- [ ] A folder that doesn't exist → `FileNotFoundError`.
-- [ ] A failed reload leaves the previous index in place (atomic swap).
-- [ ] Files are processed in sorted order, so chunk order is stable from run to run.
+Brings in `rag.py` from the earlier version of this project. Indexing, retrieval and answer generation are covered in this one step.
 
-**Done when**: indexing tests pass offline, and `RAGBot()` needs no OpenAI key.
+Changes from the earlier version:
+- [x] `parsing.py` renamed back to `parser.py`, the name `rag.py` imports.
+- [x] The embedding model is bundled in `models/all-MiniLM-L6-v2` (87 MB), so the relative path in `rag.py` works on a fresh clone. `models/` is no longer ignored by git.
+- [x] Both providers are supported: Azure OpenAI when `AZURE_OPENAI_ENDPOINT` is set, otherwise OpenAI. The model comes from `MODEL_NAME`, default `gpt-4.1-mini`.
+- [x] `httpx.Client(verify=False)` removed, so HTTPS certificates are checked again.
+- [x] The OpenAI client is still created in `__init__` (kept as is), so a key must be set even to index.
+- [x] `httpx` and `pandas` added to `requirements.txt`.
+- [x] Prompt typos fixed: missing spaces between sentences, "dont't" → "don't", "Question" → "Question: ", and a full stop after "Be concise".
 
-## Step 4 — Retrieval (`RAGBot.retrieve`)
-
-Tests first:
-- [ ] Ada Lovelace's collaborator → top source is `adalovelace.txt`.
-- [ ] The four Galilean moons → `jupiter.txt`.
-- [ ] What CRISPR stands for → `crispr.txt`.
-- [ ] Scores come back sorted from highest to lowest and lie in `[-1, 1]`.
-- [ ] `k` larger than the number of chunks → returns every chunk.
-- [ ] `k` of `0`, `-1`, `1.5` or `True` → `ValueError("k must be a positive integer.")`.
-- [ ] A blank question, or no index loaded → the exact messages in TDD.md.
-
-**Done when**: retrieval tests pass offline, and a quick look at the top-3 results for each sample question shows they make sense.
-
-## Step 5 — Generation (`RAGBot.ask`)
-
-Tests first, with OpenAI mocked:
-- [ ] The request uses `MODEL_NAME` and `temperature=0`.
-- [ ] The system prompt contains the grounding, "don't know" and citation instructions.
-- [ ] The user message contains numbered `[n] Source:` blocks followed by the question.
-- [ ] The response is the answer followed by `Retrieved sources:`, with numbers matching the context blocks.
-- [ ] A missing or blank `OPENAI_API_KEY` returns the "Set these variables…" message, and the client is never created.
-- [ ] `OpenAIError` returns the "request failed" message.
-- [ ] An empty or whitespace answer returns the "no answer" message.
-- [ ] The client is created once and reused across calls.
-- [ ] A blank question returns `"Please enter a question."` without any API call.
+Tests (`tests/test_rag.py`, 15, with OpenAI mocked):
+- [x] **Client choice:**
+  - OpenAI without an Azure endpoint, Azure with one, each with the right settings;
+  - the bundled model path is used.
+- [x] **Indexing:**
+  - one unit-length vector per chunk;
+  - all three documents are indexed;
+  - `.DS_Store` and `.md` are skipped.
+- [x] **Retrieval:**
+  - the Ada Lovelace, Jupiter and CRISPR questions put a chunk from the right document first;
+  - `k` chunks are sent;
+  - with fewer chunks than `k`, all of them are sent.
+- [x] **Generation:**
+  - model name and `temperature=0`;
+  - the exact corrected system prompt;
+  - the user message format;
+  - `MODEL_NAME` defaults to `gpt-4.1-mini`;
+  - the reply lists the sources;
+  - `OpenAIError` is re-raised with context.
+- [x] `tests/conftest.py` loads the bundled model and provides a session-scoped `bot` with a dummy key.
 
 Manual check with a real key:
 - [ ] A question for each topic, plus one outside the documents (e.g. a restaurant recommendation), which should get "don't know".
 
-**Done when**: the mocked tests pass, and the manual check answers correctly with correct citations.
+**Done when**: the mocked tests pass offline (✅ 35 passed in ~5 s: 9 parser + 11 chunker + 15 rag), and the manual check answers correctly with correct citations.
 
-## Step 6 — CLI (`main.py`)
+## Step 4 — CLI (`main.py`)
 
 Tests first:
 - [ ] Running from another working directory still finds `data/`.
@@ -120,7 +113,7 @@ Tests first:
 
 **Done when**: `python main.py` works from both the repo root and elsewhere.
 
-## Step 7 — Retrieval eval (CI)
+## Step 5 — Retrieval eval (CI)
 
 - [ ] Add `requirements-dev.txt` containing `pytest`. No retrieval-eval library is needed.
 - [ ] Port the 50 questions from the earlier `eval_recall.py` into `eval/dataset.jsonl` (`id`, `question`, `answer_type`, `keyword`, `source`, `expected_answer`). Add about 5 unanswerable questions.
@@ -144,7 +137,7 @@ Then:
 
 **Done when**: `pytest` runs the retrieval gate in seconds, with no API keys.
 
-## Step 8 — LLM answer eval (on demand)
+## Step 6 — LLM answer eval (on demand)
 
 - [ ] Add `requirements-eval.txt` containing `mlflow` (a version with `mlflow.genai`) and `anthropic`. Add `mlruns/` to `.gitignore`.
 - [ ] Implement `eval/llm_eval.py` with the scorers listed in TDD.md. Smoke-test it with `--limit 3`.
@@ -153,7 +146,7 @@ Then:
 
 **Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`.
 
-## Step 9 — Polish and publish
+## Step 7 — Polish and publish
 
 - [ ] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders.
 - [ ] Check that README examples match real output. Replace the illustrative sample session with a real one.
