@@ -1,7 +1,5 @@
 import os
 from pathlib import Path
-import httpx
-import pandas as pd
 from dotenv import load_dotenv
 from openai import AzureOpenAI, OpenAI, OpenAIError
 from sentence_transformers import SentenceTransformer
