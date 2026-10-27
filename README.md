@@ -27,7 +27,7 @@ A NumPy matrix is enough at this scale. There's no persistence, reranker or conv
 ```
 mini-rag/
 ├── data/            # sample corpus: Ada Lovelace, Jupiter, CRISPR (from Wikipedia)
-├── parsing.py       # file → Document/Page
+├── parsing.py       # file → Document
 ├── chunker.py       # token-based overlapping chunker
 ├── rag.py           # RAGBot: index, retrieve, ask
 ├── main.py          # interactive CLI
