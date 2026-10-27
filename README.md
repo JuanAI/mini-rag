@@ -14,10 +14,10 @@ Retrieved sources:
 
 ## How it works
 
-1. **Parse**: `parsing.py` reads each `.txt` file as is. Other file types are skipped. `ParserFactory` is the place to add new formats.
+1. **Parse**: `parser.py` reads each `.txt` file as is. Other file types are skipped. `ParserFactory` is the place to add new formats.
 2. **Chunk**: `chunker.py` splits text by *tokens*, not characters, using the embedding model's own tokenizer. Each chunk is 96 tokens: 80 new ones plus 16 repeated from the end of the previous chunk, so context at the boundaries isn't lost. Chunk text is decoded from the tokens, so it is lowercase. Each chunk keeps its source filename.
 3. **Embed**: chunks are batch-encoded with [`all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and L2-normalized, so a dot product equals cosine similarity.
-4. **Retrieve**: the question is embedded the same way, scored against every chunk with a single matrix product, and the top *k* (default 3) are returned.
+4. **Retrieve**: the question is embedded the same way, scored against every chunk with a single matrix product, and the top *k* (default 5) are used.
 5. **Generate**: the retrieved chunks go into the prompt with numbered source labels. The system prompt tells the model to answer only from that context, treat it as data rather than instructions, cite passages as `[1]`, `[2]`, and say when the answer isn't there.
 
 A NumPy matrix is enough at this scale. There's no persistence, reranker or conversation memory, by design.
@@ -27,9 +27,10 @@ A NumPy matrix is enough at this scale. There's no persistence, reranker or conv
 ```
 mini-rag/
 ├── data/            # sample corpus: Ada Lovelace, Jupiter, CRISPR (from Wikipedia)
-├── parsing.py       # file → Document
+├── parser.py        # file → Document
 ├── chunker.py       # token-based overlapping chunker
 ├── rag.py           # RAGBot: index, retrieve, ask
+├── models/          # bundled all-MiniLM-L6-v2 embedding model (~87 MB)
 ├── main.py          # interactive CLI
 ├── eval/            # eval dataset, retrieval metrics, LLM judge eval
 └── tests/           # pytest suite (real embedding model, mocked OpenAI)
@@ -43,18 +44,20 @@ Requires Python 3.10+.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # then add your OpenAI API key
+cp .env.example .env   # then add your OpenAI or Azure OpenAI settings
 ```
 
-`.env` variables:
+`.env` variables. Fill in **one** provider:
 
-| Variable | Default | Purpose |
+| Variable | Provider | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | (none) | Required to generate answers |
-| `MODEL_NAME` | `gpt-4o-mini` | OpenAI chat model |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Any SentenceTransformer model name or local path |
+| `OPENAI_API_KEY` | OpenAI | API key |
+| `AZURE_OPENAI_ENDPOINT` | Azure | Resource endpoint; when it is set, Azure is used |
+| `AZURE_OPENAI_API_KEY` | Azure | API key |
+| `OPENAI_API_VERSION` | Azure | API version, e.g. `2024-10-21` |
+| `MODEL_NAME` | both | Chat model (default `gpt-4.1-mini`); for Azure, the deployment name |
 
-The embedding model is downloaded from the Hugging Face Hub on first run and cached after that.
+The embedding model is bundled in `models/all-MiniLM-L6-v2`, so nothing is downloaded at runtime. Run commands from the repo root, because the model path is relative.
 
 ## Usage
 
@@ -64,15 +67,14 @@ python main.py
 
 Ask about anything in `data/`. To use your own documents, drop `.txt` files into `data/`.
 
-You can also inspect retrieval without calling the LLM:
+You can also call the bot from Python:
 
 ```python
 from rag import RAGBot
 
 bot = RAGBot()
-bot.read_and_embed_data("data")
-for chunk, score in bot.retrieve("What does CRISPR stand for?"):
-    print(chunk.source, round(score, 3), chunk.text[:80])
+bot.read_and_embed_data("data/")
+print(bot.ask("What does CRISPR stand for?", k=3))
 ```
 
 ## Tests
