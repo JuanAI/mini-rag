@@ -76,7 +76,7 @@ Changes from the earlier version:
 - [x] Both providers are supported: Azure OpenAI when `AZURE_OPENAI_ENDPOINT` is set, otherwise OpenAI. The model comes from `MODEL_NAME`, default `gpt-4.1-mini`.
 - [x] `httpx.Client(verify=False)` removed, so HTTPS certificates are checked again.
 - [x] The OpenAI client is still created in `__init__` (kept as is), so a key must be set even to index.
-- [x] `httpx` and `pandas` added to `requirements.txt`.
+- [x] Unused `httpx` and `pandas` imports removed, so neither is needed in `requirements.txt`.
 - [x] Prompt typos fixed: missing spaces between sentences, "dont't" → "don't", "Question" → "Question: ", and a full stop after "Be concise".
 
 Tests (`tests/test_rag.py`, 15, with OpenAI mocked):
