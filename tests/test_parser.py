@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from parsing import Document, ParserFactory, txtParser
+from parser import Document, ParserFactory, txtParser
 
 
 class TestTxtParser:
@@ -34,7 +34,7 @@ class TestParserFactory:
 
     @pytest.mark.parametrize("name", ["notes.md", "README", ".DS_Store"])
     def test_unsupported_returns_none_and_warns(self, name, caplog):
-        with caplog.at_level(logging.WARNING, logger="parsing"):
+        with caplog.at_level(logging.WARNING, logger="parser"):
             assert ParserFactory.get_parser(Path(name)) is None
         assert "does not have parser" in caplog.text
 
