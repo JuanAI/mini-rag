@@ -95,9 +95,11 @@ The tests use the real embedding model and a mocked OpenAI client, so they make 
 
 | What | Tool | Where it runs |
 |---|---|---|
-| Retrieval quality: Recall@k and MRR over 50 questions, each with a keyword that marks its answer passage | plain Python (`eval/retrieval.py`) | CI, on every push. Fails if a metric drops below `eval/baselines/retrieval.json` |
+| Retrieval quality: Recall@k and MRR over 50 questions, each with a keyword that marks its answer passage | plain Python (`python -m eval.retrieval`) | CI, on every push. Fails if recall@5 or MRR drops below `eval/baselines/retrieval.json` |
 | Citation validity | plain Python | CI, on every push |
 | Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm_eval`, then `mlflow ui` |
+
+Current retrieval baseline: **recall@5 0.90, MRR 0.688** (top 1: 0.52, top 3: 0.84, top 10: 0.96).
 
 CI needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes.
 

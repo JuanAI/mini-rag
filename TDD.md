@@ -161,16 +161,18 @@ Evaluation is split by cost and determinism:
 One JSON object per line:
 
 ```json
-{"id": "q01", "question": "Who discovered the four largest moons of Jupiter in 1610?",
- "answer_type": "answerable", "keyword": "galileo galilei", "source": "jupiter",
- "expected_answer": "Galileo Galilei"}
+{"id": "q44", "question": "Who discovered the four largest moons of Jupiter in 1610?",
+ "answer_type": "answerable", "keyword": "galileo galilei", "source": "jupiter"}
+{"id": "u01", "question": "Can you recommend a good Italian restaurant in London?",
+ "answer_type": "unanswerable"}
 ```
 
-- `id` is unique.
+- `id` is unique: `q01`–`q50` are answerable, `u01`–`u05` are unanswerable.
 - `answer_type` is `"answerable"` or `"unanswerable"`.
 - `keyword` is a phrase that appears **only** in the passage that answers the question. `source` is a substring of the document's filename.
 - Unanswerable questions have no `keyword` or `source`. They are used only by the LLM eval.
-- The starting set is the 50 existing questions (20 Ada Lovelace, 14 CRISPR, 16 Jupiter), plus about 5 unanswerable ones.
+- The set has the 50 questions from the earlier `eval_recall.py` (20 Ada Lovelace, 14 CRISPR, 16 Jupiter), plus 5 unanswerable ones. One unanswerable question, "How many moons does Saturn have?", is deliberately close to the corpus: Saturn is mentioned, but its moons are not.
+- `expected_answer` is added in Step 6, where the LLM eval needs it.
 
 **Why keywords rather than chunk IDs.** A chunk is relevant when it comes from `source` and contains `keyword`, after both are normalized. Relevance is worked out again on every run, so the labels survive any change to chunk size, overlap or embedding model. That is exactly what the eval exists to compare. Labels that pointed at chunk IDs would go stale on every chunker change.
 
@@ -194,24 +196,28 @@ python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline]
 - `evaluate_retrieval`:
   - Scores answerable questions only.
   - Returns `recall@{k}` for each `k` and `mrr`, each in `[0, 1]`.
-  - Also returns `recall@3/{source}` for each document.
+  - Also returns `recall@5/{source}` for each document. k=5 is `ask()`'s default, so these are the chunks the LLM actually sees.
   - With one relevant passage per question, recall@k is the hit rate at k.
 - The CLI options:
-  - `--chunk-size` sets `bot.chunker.chunk_size` before indexing.
-  - `--show` prints the top 3 chunks for every miss at k=3.
+  - `--chunk-size` overrides `Chunker.chunk_size` while indexing. `RAGBot` creates its chunker inside `read_and_embed_data`, so the eval sets the size on `Chunker` itself.
+  - `--show` prints the top 3 chunks for every miss at k=5.
+  - `--update-baseline` refuses to run together with `--chunk-size`.
 - Results are deterministic: the same code, data and model always give the same metrics.
+- `RAGBot()` needs a key to construct its LLM client. If none is configured, the eval sets a placeholder key: retrieval never calls the LLM.
 - **CI gate** (`tests/test_eval_retrieval.py`):
   - `invalid_keywords(...) == []`.
-  - `recall@3` and `mrr` must each be ≥ the value in `eval/baselines/retrieval.json` − 0.02.
+  - `recall@5` and `mrr` must each be ≥ the value in `eval/baselines/retrieval.json` − 0.02.
 - The baseline is updated only deliberately, with `--update-baseline` and a commit, so every change to it is visible in the PR diff.
 
 ### Citation checks — `eval/checks.py`
 
 ```python
-def invalid_citations(answer: str, n_sources: int) -> list[int]: ...
+def invalid_citations(answer: str, allowed: Iterable[int]) -> list[int]: ...
 ```
 
-- Returns every `[n]` in `answer` where `n < 1` or `n > n_sources`. An empty list means all citations are valid.
+- Returns every number cited as `[n]` in `answer` that isn't in `allowed`, once each, in order of first appearance. An empty list means all citations are valid.
+- `allowed` is the set of retrieved chunk ids, because `rag.py` labels each passage in the context with its chunk id (e.g. `[37] Source: …`).
+- Only bracketed whole numbers count as citations: `[2-3]` and `[x]` are ignored.
 - These are pure functions, unit-tested in CI and reused as a scorer in the LLM eval.
 
 ### LLM answer eval — `eval/llm_eval.py`

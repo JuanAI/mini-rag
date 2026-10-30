@@ -126,29 +126,62 @@ VS Code setup (`.vscode/`, from the earlier version of this project):
 
 **Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 40 passed in ~7 s (9 parser + 11 chunker + 15 rag + 5 cli).
 
-## Step 5 — Retrieval eval (CI)
+## Step 5 — Retrieval eval (CI) ✅
 
-- [ ] Add `requirements-dev.txt` containing `pytest`. No retrieval-eval library is needed.
-- [ ] Port the 50 questions from the earlier `eval_recall.py` into `eval/dataset.jsonl` (`id`, `question`, `answer_type`, `keyword`, `source`, `expected_answer`). Add about 5 unanswerable questions.
+Adapted from the earlier `eval_recall.py`. No retrieval-eval library is needed, and `requirements-dev.txt` already has `pytest`.
 
-Tests first:
-- [ ] `norm("£3,000")`, `norm("MIL-STD-1815")` → `"3 000"`, `"mil std 1815"`.
-- [ ] `invalid_keywords(bot, dataset) == []`.
-- [ ] `rank_of_answer`:
-  - with a fake index → the expected rank;
-  - when the keyword exists only in another document → `None`.
-- [ ] `evaluate_retrieval`:
-  - every metric is in `[0, 1]`, and `recall@k` never decreases as k grows;
-  - a second run gives the same numbers.
-- [ ] `invalid_citations("A [1] B [4]", 3) == [4]`, plus `[0]`, no citations, and repeated citations.
-- [ ] `recall@3` and `mrr` are each ≥ baseline − 0.02.
+- [x] `eval/dataset.jsonl`:
+  - the 50 questions from `eval_recall.py` (20 Ada Lovelace, 14 CRISPR, 16 Jupiter);
+  - 5 unanswerable questions: a restaurant, Bitcoin, the World Cup, Saturn's moons (close to the corpus, but not in it) and the boiling point of ethanol.
+  - `expected_answer` comes in Step 6.
+- [x] `eval/retrieval.py` and `eval/checks.py`, run with `python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline]`.
 
-Then:
-- [ ] Implement `eval/retrieval.py` by adapting `eval_recall.py` to mini-rag's API (`Chunker`, `chunk.id`, `bot.chunker.chunk_size`). Then implement `eval/checks.py`.
-- [ ] Generate `eval/baselines/retrieval.json` and commit it.
-- [ ] Optional: run `--chunk-size` at 80, 120, 200 and 256 and record the results in the README, to justify the default.
+Changes from the original contract:
+- [x] The gate is on **recall@5** rather than recall@3, because `ask()` now sends the top 5 chunks to the LLM.
+- [x] `--chunk-size` overrides `Chunker.chunk_size` while indexing, as `eval_recall.py` did. `RAGBot` has no `chunker` attribute.
+- [x] `invalid_citations(answer, allowed)` checks against the retrieved chunk ids, because that's how `rag.py` labels passages.
 
-**Done when**: `pytest` runs the retrieval gate in seconds, with no API keys.
+Tests (`tests/test_eval_retrieval.py`, 17):
+- [x] `norm`: `£3,000` → `3 000`; `MIL-STD-1815` → `mil std 1815`; and two more.
+- [x] **Dataset:**
+  - ids are unique, and the 50 answerable questions have a keyword and a source;
+  - every keyword exists in its source document (`invalid_keywords == []`).
+- [x] `rank_of_answer`:
+  - with a fake index, a better-scoring chunk from the wrong document is skipped;
+  - `None` when the keyword is only in another document.
+- [x] `evaluate_retrieval`:
+  - every metric is in `[0, 1]`;
+  - recall never decreases as k grows;
+  - per-document recall is reported;
+  - a second run gives identical numbers.
+- [x] `invalid_citations`: valid ids, an unknown id, `[0]`, no citations, repeats, and non-numeric brackets.
+- [x] **Gate**: `recall@5` and `mrr` are each ≥ baseline − 0.02.
+
+**Baseline** (`eval/baselines/retrieval.json`, chunk size 80):
+
+| recall@1 | recall@3 | recall@5 | recall@10 | MRR |
+|---|---|---|---|---|
+| 0.52 | 0.84 | **0.90** | 0.96 | **0.688** |
+
+Recall@5 by document: Ada Lovelace 0.80, CRISPR 1.00, Jupiter 0.94.
+
+Misses at k=5: q06 (Menabrea's article, rank 10), q07 (seven notes, rank 86), q11 (date of meeting Babbage, rank 9), q12 ("Enchantress of Number", rank 15), q36 (Jupiter's diameter, rank 9).
+
+**Chunk size comparison** (`--chunk-size`):
+
+| Size | Chunks | recall@5 | MRR | Note |
+|---|---|---|---|---|
+| **80** (default) | 372 | **0.90** | 0.688 | |
+| 120 | 248 | 0.88 | 0.671 | |
+| 200 | 150 | 0.80 | 0.644 | |
+| 254 | 118 | 0.90 | 0.725 | **Not valid**: 254 + 20% overlap = 304 tokens, over the model's 256 limit, so the end of each chunk is silently cut off when embedding |
+
+The default of 80 is the best valid size. Any size above about 211 overflows the model, because each chunk is the size plus 20%.
+
+Open issue found while building the citation check:
+- [ ] `rag.py` labels passages with chunk ids (`[37] Source: …`), but its prompt says *"Cite supporting passages with [1], [2] etc."* The model may cite numbers that match no passage. Fix the prompt or the labels before Step 6.
+
+**Done when**: `pytest` runs the retrieval gate in seconds, with no API keys. ✅ 57 passed in ~6 s (40 before + 17 eval).
 
 ## Step 6 — LLM answer eval (on demand)
 
