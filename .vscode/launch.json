@@ -18,6 +18,33 @@
       "cwd": "${workspaceFolder}",
       "env": { "TOKENIZERS_PARALLELISM": "false" },
       "justMyCode": false
+    },
+    {
+      // Retrieval eval: python -m eval.retrieval [flags]. Asks which flags to
+      // pass each time it starts (see the docstring in eval/retrieval.py).
+      "name": "Eval: retrieval",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "eval.retrieval",
+      "args": "${input:evalRetrievalArgs}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": { "TOKENIZERS_PARALLELISM": "false" },
+      "justMyCode": false
+    }
+  ],
+  "inputs": [
+    {
+      "id": "evalRetrievalArgs",
+      "type": "pickString",
+      "description": "Flags for python -m eval.retrieval",
+      "options": [
+        { "label": "report only", "value": "" },
+        { "label": "--show (top-3 chunks for each miss)", "value": "--show" },
+        { "label": "--update-baseline (write eval/baselines/retrieval.json)", "value": "--update-baseline" }
+      ],
+      "default": ""
     }
   ]
 }
