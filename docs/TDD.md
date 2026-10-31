@@ -1,8 +1,8 @@
 # TDD — signatures and contracts
 
-Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `tests/` (one file per module: `test_parser.py`, `test_chunker.py`, `test_rag.py`, `test_cli.py`, and the eval tests in `tests/eval/`: `test_eval_retrieval.py`, `test_llm_eval.py`); [PLAN.md](PLAN.md) gives the order they get written in.
+Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `tests/` (one file per module: `test_parser.py`, `test_chunker.py`, `test_rag.py`, `test_cli.py`, `test_telemetry.py`, and the eval tests in `tests/eval/`: `test_eval_retrieval.py`, `test_llm_eval.py`); [PLAN.md](PLAN.md) gives the order they get written in.
 
-Sections marked **Planned (Step 7)** describe contracts that are written but not built yet.
+Items marked **planned** describe contracts that are written but not built yet.
 
 Conventions:
 - **Pre**: what the caller must provide.
@@ -107,7 +107,7 @@ class RAGBot:
 
     def __init__(self) -> None: ...
     def read_and_embed_data(self, folder_path) -> None: ...
-    def ask(self, question, k=5) -> str: ...   # Step 7 adds session_id=None, user_id=None
+    def ask(self, question, k=5, session_id=None, user_id=None) -> str: ...   # ids: tracing
     def retrieve(self, question, k=5) -> list[Chunk]: ...
     def generate(self, question, matches: list[Chunk]) -> str: ...
 ```
@@ -152,74 +152,87 @@ Taken from the earlier version of this project, plus a clean exit and handling f
 - EOF (Ctrl-D) or Ctrl-C ends the session cleanly, with exit status 0 and no traceback.
 - If `ask()` raises (e.g. an expired key or a network error), it prints `RAGBot: Sorry, that request failed: {error}` and waits for the next question, instead of ending the session.
 - Needs an OpenAI or Azure key in `.env`, because `RAGBot()` creates its client on startup.
-- **Session** (planned, Step 7): one CLI run is one conversation. `main.py` makes a `session_id` (a UUID) at startup and passes it to every `ask()`, so the session view in Langfuse groups that run's questions. `user_id` comes from `RAGBOT_USER_ID`, or the OS user name if it isn't set.
+- **Session**: one CLI run is one conversation. `main.py` makes a `session_id` (a UUID) at startup and passes it to every `ask()`, so the session view in Langfuse groups that run's questions. `user_id` comes from `RAGBOT_USER_ID`, or the OS user name if it isn't set.
+- **Tracing**: calls `setup_telemetry()` and `setup_langfuse()` at startup, and `flush_telemetry()` on every exit (Ctrl-D, Ctrl-C), so batched spans aren't lost.
 
-## Observability — `telemetry.py` (Planned, Step 7)
+## Observability — `telemetry.py`
 
-**Not built yet.** Nothing in this section exists in the code: no `telemetry.py`, no spans, no `docker-compose.yml`. These are the contracts Step 7 implements test-first.
-
-Production-style tracing, modelled on how AXO474 runs its RAG API. The bot emits OpenTelemetry spans. A Langfuse span processor sends the LLM-relevant ones to Langfuse, and any other exporter (in AXO474, Datadog) can receive all of them. Tracing is off unless configured, and a tracing failure never breaks a request.
+Production-style tracing, modelled on how a production enterprise-level RAG app is observed. The bot emits OpenTelemetry spans. A Langfuse span processor sends the LLM-relevant ones to Langfuse, and any other exporter (in production, typically an APM such as Datadog) can receive all of them. Tracing is off unless configured, and a tracing failure never breaks a request.
 
 ```python
+def build_provider() -> TracerProvider: ...    # a new provider, not installed
 def setup_telemetry() -> TracerProvider: ...   # global OTel provider; idempotent
 def setup_langfuse() -> bool: ...              # True if the Langfuse processor was attached
 def should_export_to_langfuse(span) -> bool: ...
+def flush_telemetry() -> None: ...
 tracer = trace.get_tracer("mini_rag")
 ```
 
-### `setup_telemetry()`
-- Creates the global OpenTelemetry `TracerProvider` with resource `service.name = OTEL_SERVICE_NAME` (default `mini-rag`). Calling it again returns the same provider.
-- If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, it adds a `BatchSpanProcessor` with an OTLP exporter that receives **every** span. This stands in for AXO474's Datadog pipe. Otherwise no general exporter is added.
-- Must run before `setup_langfuse()`, which attaches to this provider.
+### `build_provider()` and `setup_telemetry()`
+- `build_provider` returns a new `TracerProvider` with resource `service.name = OTEL_SERVICE_NAME` (default `mini-rag`). If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, it adds a `BatchSpanProcessor` with an OTLP/HTTP exporter that receives **every** span. This stands in for a production APM pipeline. Otherwise no general exporter is added.
+- `setup_telemetry` installs that provider as the global one and instruments the OpenAI SDK (`opentelemetry-instrumentation-openai`), whose `openai.chat` span carries the prompt, completion, model and token usage. Calling it again returns the same provider; OpenTelemetry allows only one global provider per process.
+
+### `flush_telemetry()`
+- Sends any batched spans now. A no-op if `setup_telemetry()` never ran.
 
 ### `setup_langfuse()`
 - A no-op that returns `False` when `LANGFUSE_ENABLED` isn't `true`. This is the default, so tests and the evals never send anything.
 - When enabled, it needs `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST`. If a key is missing, or the SDK fails to initialise, it logs a warning and returns `False`. The bot keeps working without traces.
-- Attaches Langfuse's span processor to the global provider, filtered by `should_export_to_langfuse`, and returns `True`. Spans are batched and flushed in the background; `main.py` flushes on exit.
+- Creates a `langfuse.Langfuse` client with `tracer_provider=setup_telemetry()` and `should_export_span=should_export_to_langfuse`, which attaches Langfuse's span processor to the global provider, and returns `True`. Langfuse's default filter would drop the `mini_rag` spans (it keeps only GenAI spans), hence the custom one. Spans are batched and flushed in the background; `main.py` flushes on exit.
 - `LANGFUSE_HOST` must match the region the keys belong to (Langfuse Cloud is split into US and EU).
 
 ### `should_export_to_langfuse(span)`
-- The same approach as AXO474: block infrastructure instrumentation scopes, allow everything else.
-- Returns `False` for spans whose instrumentation scope starts with `opentelemetry.instrumentation.` followed by `httpx`, `requests`, `urllib` or `aiohttp`. These are the HTTP layers under the OpenAI SDK; they add noise and would duplicate the LLM span.
+- Block infrastructure instrumentation scopes, allow everything else.
+- Returns `False` for spans whose instrumentation scope starts with `opentelemetry.instrumentation.` followed by `httpx`, `requests`, `urllib` or `aiohttp` (a prefix match, so `urllib3` and `aiohttp_client` are blocked too). These are the HTTP layers under the OpenAI SDK; they add noise and would duplicate the LLM span. mini-rag doesn't instrument them today, so the filter is a guard for later.
 - Returns `True` for everything else: the `mini_rag` spans and the OpenAI instrumentor's spans.
 
 ### Spans emitted by `RAGBot.ask`
 
-`ask(question, k=5, session_id=None, user_id=None)`: the two new keyword arguments are optional, so existing callers are unaffected.
+`ask(question, k=5, session_id=None, user_id=None)`: the two keyword arguments are optional, so existing callers are unaffected. `retrieve` and `generate` emit their spans when called on their own too (as the LLM eval does), but nothing receives them unless `setup_telemetry()` ran.
 
 | Span | Parent | Attributes |
 |---|---|---|
-| `rag.ask` | none (trace root) | `langfuse.observation.input` = question, `langfuse.observation.output` = answer, `session.id`, `user.id`, `rag.k` |
-| `rag.retrieve` | `rag.ask` | `rag.chunk_ids`, `rag.sources`, `rag.top_score` |
-| `rag.generate` | `rag.ask` | `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` (from the OpenAI response) |
+| `rag.ask` | none (trace root) | `langfuse.observation.input` = question, `langfuse.observation.output` = answer (without the sources footer), `session.id` and `user.id` (only when given), `rag.k` |
+| `rag.retrieve` | `rag.ask` | `rag.chunk_ids`, `rag.sources`, `rag.top_score` (omitted for an empty index) |
+| `rag.generate` | `rag.ask` | `rag.model`, `rag.input_tokens`, `rag.output_tokens` (from the OpenAI response's `usage`, when present) |
+| `openai.chat` | `rag.generate` | set by the OpenAI instrumentor, only after `setup_telemetry()`: `gen_ai.request.model`, `gen_ai.usage.*`, prompt and completion |
 
-- **Post**: one trace per `ask()`, three spans, `rag.ask` the root. The attributes go on `rag.ask` the same way AXO474's Chat V3 sets them on its root span.
-- On `OpenAIError`, `rag.generate` and `rag.ask` record the exception and set status `ERROR`; the existing `Exception(...)` is still raised.
+- **Post**: one trace per `ask()`, `rag.ask` the root, with three spans (four with the instrumentor). Input and output go on the root span, where Langfuse reads them for the whole trace. `session.id` and `user.id` go on every span, through Langfuse's `propagate_attributes` (its span processor copies them onto each child span): Langfuse v4 sums cost per session and user over the spans that carry the id, and the cost is on `openai.chat`. With them on the root only, the Sessions and Users pages show no cost.
+- `rag.generate` uses `rag.*` names, not `gen_ai.*`: Langfuse turns a span with `gen_ai.usage.*` into a costed generation, so the same names next to `openai.chat` would count the LLM cost twice.
+- On `OpenAIError`, `rag.generate` and `rag.ask` record the raised `Exception(...)` (which chains the `OpenAIError`) and set status `ERROR`; the exception still propagates.
 - Without `setup_telemetry()` the global provider is OpenTelemetry's no-op one, so these spans cost nothing and go nowhere.
 
 ### Local services — `docker-compose.yml`
 
-Optional supporting services, the same way AXO474 runs them: official images, each behind an opt-in profile, so plain `docker compose up` starts nothing.
+Optional supporting services: official images, each behind an opt-in profile, so plain `docker compose up` starts nothing.
 
 | Profile | Service | Image | Ports | Data |
 |---|---|---|---|---|
-| `evals` | `mlflow` | `ghcr.io/mlflow/mlflow`, pinned to the same version as the `mlflow` in `requirements-eval.txt` | 5000 (UI and API) | named volume `mlflow-data` (`sqlite:///mlflow/mlflow.db`, artifacts in `/mlflow/artifacts`, served with `--serve-artifacts`) |
-| `obs` | `jaeger` | Jaeger all-in-one, pinned | 16686 (UI), 4317 (OTLP gRPC), 4318 (OTLP HTTP) | in memory; lost on restart |
+| `evals` | `mlflow` | `ghcr.io/mlflow/mlflow:v3.17.2`, the same version as the installed `mlflow` client | 5000 (UI and API) | named volume `mlflow-data` (`sqlite:///mlflow/mlflow.db`, artifacts in `/mlflow/artifacts`, served with `--serve-artifacts`) |
+| `obs` | `jaeger` | `jaegertracing/jaeger:2.22.0` (all-in-one) | 16686 (UI), 4317 (OTLP gRPC), 4318 (OTLP HTTP) | in memory; lost on restart |
+| `langfuse` | `langfuse-web`, `langfuse-worker`, `postgres`, `clickhouse`, `redis`, `minio` | `langfuse/langfuse` and `langfuse-worker` `4.63.0`, `postgres:17.10`, `clickhouse-server:26.3.62.3`, `redis:7.4.10`, Chainguard `minio` (only `latest` is free) | 3100 (UI and API), 9190 (MinIO, for presigned media URLs); both on `127.0.0.1` only, and off Langfuse's usual 3000/9090 so another local Langfuse can run alongside | named volumes `langfuse-*`; `make langfuse-reset` deletes them |
 
 ```bash
 docker compose --profile obs up -d     # then OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 docker compose --profile evals up -d   # then MLFLOW_TRACKING_URI=http://localhost:5000
-docker compose --profile obs --profile evals down
+docker compose --profile langfuse up -d  # then LANGFUSE_HOST=http://localhost:3100 and the local keys
+docker compose --profile obs --profile evals --profile langfuse down
 ```
 
-- Both services have a health check: MLflow's `/health`, and Jaeger's UI port.
+- Both services have a health check: MLflow's `/health` (with the image's Python), and Jaeger's UI port (with `wget`).
 - Docker isn't required for anything. Without `MLFLOW_TRACKING_URI`, the eval writes to the local `mlflow.db`, and `.venv/bin/mlflow ui` reads it. Without `OTEL_EXPORTER_OTLP_ENDPOINT`, no general exporter is added.
 - The container's MLflow store is separate from the local `mlflow.db`. Runs logged to one don't appear in the other.
-- **Langfuse isn't included.** As in AXO474, it's Langfuse Cloud via `LANGFUSE_HOST`. Langfuse's own Docker Compose is the option for self-hosting, but it brings its own Postgres, ClickHouse, Redis and object storage, which is more than this project needs.
+- **Local Langfuse** (`langfuse` profile) is optional; Langfuse Cloud stays the default. It's Langfuse's official v4 compose file with these changes:
+  - pinned versions;
+  - the UI and MinIO bound to `127.0.0.1`, and Postgres, Redis and ClickHouse not published at all;
+  - Langfuse's usage telemetry off;
+  - `LANGFUSE_INIT_*` creates an organisation, a `mini-rag` project with API keys (`pk-lf-local-mini-rag` / `sk-lf-local-mini-rag`) and a UI user on first start, so no sign-up is needed.
+  
+  Every secret in it is a local-only default, which is acceptable only because nothing is reachable from outside the machine. It costs six containers and about 3–4 GB of RAM. `make run-langfuse-local` passes the local keys on the command line, so they win over `.env`.
 
 ### Interplay with the MLflow eval
-- `eval/llm_eval.py` uses MLflow tracing and never calls `setup_telemetry()` or `setup_langfuse()`, so eval traces don't reach Langfuse. AXO474 hit duplicate and broken traces when OpenTelemetry instrumentation and MLflow tracing ran together, and its eval environment removes the OTel instrumentation for that reason.
-- So Langfuse is for the live bot (`main.py`), and MLflow for offline evals. That's the same split as AXO474.
+- `eval/llm_eval.py` uses MLflow tracing and never calls `setup_telemetry()` or `setup_langfuse()`, so eval traces don't reach Langfuse. OpenTelemetry instrumentation and MLflow tracing running in the same process can produce duplicate or broken traces, so the two are kept apart.
+- So Langfuse is for the live bot (`main.py`), and MLflow for offline evals. That's a common split in production enterprise-level apps.
 
 ## Evaluation — `eval/`
 
@@ -230,12 +243,12 @@ Evaluation is split by cost and determinism:
 | Retrieval (custom, keyword-matched) | `pytest`, by hand until the Step 8 CI workflow exists | Embedding model only | Yes, if a metric drops below baseline |
 | Citation checks (unit tests of `invalid_citations`) | `pytest`, same as above | Nothing | Yes |
 | LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
-| Retrieval, published to Langfuse (planned, optional, Step 7) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
+| Retrieval, published to Langfuse (planned, optional) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
 
-**Retrieval in Langfuse (`--langfuse`, planned)** follows AXO474's intent-model comparison, its one deterministic eval published to Langfuse:
-- Upserts a Langfuse dataset `mini-rag-retrieval` with one item per answerable question. Item IDs are the dataset `id`s, so re-runs update the same items rather than adding new ones.
-- Records one experiment run per invocation, named with `--run-name` (default: chunk size and timestamp). Each item gets the scores `rank` (null if not found) and `hit@5`, and the run gets `recall@1/3/5/10` and `mrr`.
-- The console report is printed first, whatever happens. If Langfuse is unreachable or misconfigured, it logs a warning and the command still exits 0, as in AXO474.
+**Retrieval in Langfuse (`--langfuse`, planned)** publishes a deterministic eval to Langfuse, so experiment runs can be compared there:
+- Upserts a Langfuse dataset `mini-rag-retrieval` with one item per answerable question. Item IDs are `mini-rag-retrieval-{id}` (Langfuse item IDs are unique across all datasets), and `create_dataset_item` upserts by ID, so re-runs update the same items rather than adding new ones.
+- Records one experiment run per invocation, named with `--run-name` (default: chunk size and timestamp). Each item gets the scores `rank` (omitted if not found) and `hit@5`, and the run gets `recall@1/3/5/10` and `mrr`.
+- The console report is printed first, whatever happens. If Langfuse is unreachable or misconfigured, it logs a warning and the command still exits 0.
 - This is what makes chunk-size experiments comparable side by side in Langfuse. The pytest gate still reads `eval/baselines/retrieval.json` and doesn't depend on Langfuse.
 
 ### Dataset — `eval/dataset.jsonl`
@@ -360,13 +373,13 @@ python -m eval.llm_eval [--limit N] [--run-name NAME]
 | `TOKENIZERS_PARALLELISM` | no | set to `false` to silence tokenizer warnings |
 | `JUDGE_MODEL` | LLM eval only | `anthropic:/claude-haiku-5-5` |
 | `ANTHROPIC_API_KEY` | LLM eval only | (none) |
-| `LANGFUSE_ENABLED` (planned, Step 7) | no | `false`; `true` sends bot traces to Langfuse |
-| `LANGFUSE_PUBLIC_KEY` (planned, Step 7) | when Langfuse is enabled | (none) |
-| `LANGFUSE_SECRET_KEY` (planned, Step 7) | when Langfuse is enabled | (none) |
-| `LANGFUSE_HOST` (planned, Step 7) | when Langfuse is enabled | `https://cloud.langfuse.com` (EU), or the US host, or a self-hosted URL |
-| `OTEL_SERVICE_NAME` (planned, Step 7) | no | `mini-rag` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (planned, Step 7) | no | unset; when set, every span is also exported over OTLP (e.g. `http://localhost:4318` for the compose Jaeger) |
-| `MLFLOW_TRACKING_URI` | no | unset, i.e. the local `mlflow.db`; read by MLflow itself; `http://localhost:5000` for the compose MLflow (Step 7) |
-| `RAGBOT_USER_ID` (planned, Step 7) | no | the OS user name; sent as `user.id` |
+| `LANGFUSE_ENABLED` | no | `false`; `true` sends bot traces to Langfuse |
+| `LANGFUSE_PUBLIC_KEY` | when Langfuse is enabled | (none) |
+| `LANGFUSE_SECRET_KEY` | when Langfuse is enabled | (none) |
+| `LANGFUSE_HOST` | when Langfuse is enabled | (none); `.env.example` has `https://cloud.langfuse.com` (EU). Use the US host or a self-hosted URL to match the keys |
+| `OTEL_SERVICE_NAME` | no | `mini-rag` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | unset; when set, every span is also exported over OTLP (e.g. `http://localhost:4318` for the compose Jaeger) |
+| `MLFLOW_TRACKING_URI` | no | unset, i.e. the local `mlflow.db`; read by MLflow itself; `http://localhost:5000` for the compose MLflow |
+| `RAGBOT_USER_ID` | no | the OS user name; sent as `user.id` |
 
 Secrets come only from the environment. None are written in source code.
