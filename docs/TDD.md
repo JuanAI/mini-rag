@@ -1,6 +1,8 @@
 # TDD — signatures and contracts
 
-Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `test_rag.py`; [PLAN.md](PLAN.md) gives the order they get written in.
+Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `tests/` (one file per module: `test_parser.py`, `test_chunker.py`, `test_rag.py`, `test_cli.py`, and the eval tests in `tests/eval/`: `test_eval_retrieval.py`, `test_llm_eval.py`); [PLAN.md](PLAN.md) gives the order they get written in.
+
+Sections marked **Planned (Step 7)** describe contracts that are written but not built yet.
 
 Conventions:
 - **Pre**: what the caller must provide.
@@ -27,7 +29,7 @@ class Chunk:
 ```
 
 - `Chunk.source` is the file path as found under the ingested folder, e.g. `"data/jupiter.txt"`.
-- `Chunk.id` is unique **within a document** only: it restarts at 0 for each file. Evaluation never refers to it (see [Evaluation](#evaluation--eval)).
+- `Chunk.id` is unique **within a document** only: it restarts at 0 for each file. Retrieval relevance never uses it, so retrieval labels survive chunker changes (see [Evaluation](#evaluation--eval)). The LLM eval does use it, per answer: `rag.py` labels each passage in the prompt with its chunk id, and `citation_validity` checks citations against the retrieved ids.
 - A `Document` holds the whole file as one text. There are no pages; a format that has them (e.g. PDF) can add them when it's added.
 
 ## Parsers — `parser.py`
@@ -71,13 +73,13 @@ class Tokeniser:
 
 ```python
 class Chunker:
-    chunk_size: int = 80          # tokens per step
-    chunk_overlap: float = 0.2    # share of chunk_size repeated at the start of the next chunk
-    def __init__(self, model: SentenceTransformer) -> None: ...
+    def __init__(self, model: SentenceTransformer) -> None:
+        self.chunk_size = 80          # tokens per step
+        self.chunk_overlap = 0.2      # share of chunk_size repeated at the start of the next chunk
     def get_chunks(self, text: str, path: Path) -> list[Chunk]: ...
 ```
 
-Where `overlap = int(chunk_overlap * chunk_size)` (16 by default) and `n` is the number of tokens:
+Size and overlap are instance attributes set in `__init__`, not constructor arguments. Where `overlap = int(chunk_overlap * chunk_size)` (16 by default) and `n` is the number of tokens:
 - Blank `text` → `[]`.
 - Window *i* starts at token `i * chunk_size` and holds up to `chunk_size + overlap` tokens (96 by default), cut off at `n`.
 - Consecutive chunks share exactly `overlap` tokens.
@@ -88,12 +90,13 @@ Where `overlap = int(chunk_overlap * chunk_size)` (16 by default) and `n` is the
 
 ## RAG engine — `rag.py`
 
-Taken from the earlier version of this project, with five changes:
+Taken from the earlier version of this project, with six changes:
 - it can use OpenAI as well as Azure OpenAI;
 - HTTPS certificate checks are no longer turned off;
 - the model name comes from `MODEL_NAME`;
 - typos in the prompt are fixed;
-- `parser` is the module name again.
+- `parser` is the module name again;
+- `ask` is split into public `retrieve` and `generate` steps (Step 6), so the LLM eval can trace them separately.
 
 ```python
 class RAGBot:
@@ -104,7 +107,7 @@ class RAGBot:
 
     def __init__(self) -> None: ...
     def read_and_embed_data(self, folder_path) -> None: ...
-    def ask(self, question, k=5, session_id=None, user_id=None) -> str: ...   # ids: Step 7 tracing
+    def ask(self, question, k=5) -> str: ...   # Step 7 adds session_id=None, user_id=None
     def retrieve(self, question, k=5) -> list[Chunk]: ...
     def generate(self, question, matches: list[Chunk]) -> str: ...
 ```
@@ -149,9 +152,11 @@ Taken from the earlier version of this project, plus a clean exit and handling f
 - EOF (Ctrl-D) or Ctrl-C ends the session cleanly, with exit status 0 and no traceback.
 - If `ask()` raises (e.g. an expired key or a network error), it prints `RAGBot: Sorry, that request failed: {error}` and waits for the next question, instead of ending the session.
 - Needs an OpenAI or Azure key in `.env`, because `RAGBot()` creates its client on startup.
-- **Session** (Step 7): one CLI run is one conversation. `main.py` makes a `session_id` (a UUID) at startup and passes it to every `ask()`, so the session view in Langfuse groups that run's questions. `user_id` comes from `RAGBOT_USER_ID`, or the OS user name if it isn't set.
+- **Session** (planned, Step 7): one CLI run is one conversation. `main.py` makes a `session_id` (a UUID) at startup and passes it to every `ask()`, so the session view in Langfuse groups that run's questions. `user_id` comes from `RAGBOT_USER_ID`, or the OS user name if it isn't set.
 
-## Observability — `telemetry.py`
+## Observability — `telemetry.py` (Planned, Step 7)
+
+**Not built yet.** Nothing in this section exists in the code: no `telemetry.py`, no spans, no `docker-compose.yml`. These are the contracts Step 7 implements test-first.
 
 Production-style tracing, modelled on how a production enterprise app runs its RAG API. The bot emits OpenTelemetry spans. A Langfuse span processor sends the LLM-relevant ones to Langfuse, and any other exporter (in a production enterprise app, Datadog) can receive all of them. Tracing is off unless configured, and a tracing failure never breaks a request.
 
@@ -168,7 +173,7 @@ tracer = trace.get_tracer("mini_rag")
 - Must run before `setup_langfuse()`, which attaches to this provider.
 
 ### `setup_langfuse()`
-- A no-op that returns `False` when `LANGFUSE_ENABLED` isn't `true`. This is the default, so tests, CI and the evals never send anything.
+- A no-op that returns `False` when `LANGFUSE_ENABLED` isn't `true`. This is the default, so tests and the evals never send anything.
 - When enabled, it needs `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` and `LANGFUSE_HOST`. If a key is missing, or the SDK fails to initialise, it logs a warning and returns `False`. The bot keeps working without traces.
 - Attaches Langfuse's span processor to the global provider, filtered by `should_export_to_langfuse`, and returns `True`. Spans are batched and flushed in the background; `main.py` flushes on exit.
 - `LANGFUSE_HOST` must match the region the keys belong to (Langfuse Cloud is split into US and EU).
@@ -222,16 +227,16 @@ Evaluation is split by cost and determinism:
 
 | Suite | Runs | Needs | Fails the build? |
 |---|---|---|---|
-| Retrieval (custom, keyword-matched) | CI, on every push and PR | Embedding model only | Yes, if a metric drops below baseline |
-| Citation checks | CI, on every push and PR | Nothing | Yes |
+| Retrieval (custom, keyword-matched) | `pytest`, by hand until the Step 8 CI workflow exists | Embedding model only | Yes, if a metric drops below baseline |
+| Citation checks (unit tests of `invalid_citations`) | `pytest`, same as above | Nothing | Yes |
 | LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
-| Retrieval, published to Langfuse (optional, Step 7) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
+| Retrieval, published to Langfuse (planned, optional, Step 7) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
 
-**Retrieval in Langfuse (`--langfuse`)** follows a production enterprise app's intent-model comparison, its one deterministic eval published to Langfuse:
+**Retrieval in Langfuse (`--langfuse`, planned)** follows a production enterprise app's intent-model comparison, its one deterministic eval published to Langfuse:
 - Upserts a Langfuse dataset `mini-rag-retrieval` with one item per answerable question. Item IDs are the dataset `id`s, so re-runs update the same items rather than adding new ones.
 - Records one experiment run per invocation, named with `--run-name` (default: chunk size and timestamp). Each item gets the scores `rank` (null if not found) and `hit@5`, and the run gets `recall@1/3/5/10` and `mrr`.
 - The console report is printed first, whatever happens. If Langfuse is unreachable or misconfigured, it logs a warning and the command still exits 0, as in a production enterprise app.
-- This is what makes chunk-size experiments comparable side by side in Langfuse. The CI gate still reads `eval/baselines/retrieval.json` and doesn't depend on Langfuse.
+- This is what makes chunk-size experiments comparable side by side in Langfuse. The pytest gate still reads `eval/baselines/retrieval.json` and doesn't depend on Langfuse.
 
 ### Dataset — `eval/dataset.jsonl`
 
@@ -268,7 +273,7 @@ def log_to_mlflow(run_name: str | None, params: dict, metrics: dict[str, float],
 ```
 
 ```bash
-python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline] [--mlflow [--run-name NAME]]
+python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline] [--mlflow [--run-name NAME]]
 ```
 
 - `norm`: lowercases the text and collapses every run of characters that aren't letters or digits into one space. This makes matching robust to how the tokenizer decodes text, e.g. `£3,000` becomes `£3, 000`.
@@ -282,8 +287,7 @@ python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline] [
   - Also returns `recall@5/{source}` for each document. k=5 is `ask()`'s default, so these are the chunks the LLM actually sees.
   - With one relevant passage per question, recall@k is the hit rate at k.
 - The CLI options:
-  - `--chunk-size` overrides `Chunker.chunk_size` while indexing. `RAGBot` creates its chunker inside `read_and_embed_data`, so the eval sets the size on `Chunker` itself.
-  - `--show` prints the top 3 chunks for every miss at k=5.
+  - `--chunk-size` overrides the chunk size while indexing. `RAGBot` creates its chunker inside `read_and_embed_data`, so the eval patches `Chunker.get_chunks` to set `self.chunk_size` on that instance before chunking.
   - `--update-baseline` refuses to run together with `--chunk-size`.
   - `--mlflow` also logs the run to the MLflow experiment `mini-rag-retrieval-eval` (needs `requirements-eval.txt`), so retrieval experiments can be compared in `mlflow ui`:
     - params `k`, `chunk_size`, `chunk_overlap`, `embedding_model`, `chunks`, `questions`;
@@ -293,7 +297,7 @@ python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline] [
     No traces: there is no LLM call. The baseline file stays the pass/fail gate; MLflow only keeps history.
 - Results are deterministic: the same code, data and model always give the same metrics.
 - `RAGBot()` needs a key to construct its LLM client. If none is configured, the eval sets a placeholder key: retrieval never calls the LLM.
-- **CI gate** (`tests/test_eval_retrieval.py`):
+- **Gate** (`tests/eval/test_eval_retrieval.py`, run by `pytest`; CI will run it from Step 8):
   - `invalid_keywords(...) == []`.
   - `recall@5` and `mrr` must each be ≥ the value in `eval/baselines/retrieval.json` − 0.02.
 - The baseline is updated only deliberately, with `--update-baseline` and a commit, so every change to it is visible in the PR diff.
@@ -307,7 +311,7 @@ def invalid_citations(answer: str, allowed: Iterable[int]) -> list[int]: ...
 - Returns every number cited as `[n]` in `answer` that isn't in `allowed`, once each, in order of first appearance. An empty list means all citations are valid.
 - `allowed` is the set of retrieved chunk ids, because `rag.py` labels each passage in the context with its chunk id (e.g. `[37] Source: …`).
 - Only bracketed whole numbers count as citations: `[2-3]` and `[x]` are ignored.
-- These are pure functions, unit-tested in CI and reused as a scorer in the LLM eval.
+- These are pure functions, unit-tested by `pytest` and reused as a scorer in the LLM eval.
 
 ### LLM answer eval — `eval/llm_eval.py`
 
@@ -315,9 +319,9 @@ def invalid_citations(answer: str, allowed: Iterable[int]) -> list[int]: ...
 python -m eval.llm_eval [--limit N] [--run-name NAME]
 ```
 
-- Install with `pip install -r requirements-eval.txt` (MLflow and the Anthropic SDK). Not needed for the bot or for CI.
+- Install with `pip install -r requirements-eval.txt` (MLflow and the Anthropic SDK). Not needed for the bot or for `pytest`.
 - Runs every dataset question through `RAGBot.retrieve` then `RAGBot.generate` (what `ask` does, without the sources footer) and scores the answers with `mlflow.genai.evaluate()`.
-- Results go to MLflow's default local store: `mlflow.db` plus `mlruns/` for artifacts, both ignored by git. `mlflow ui`, run from the repo root, opens them.
+- Runs go to the MLflow experiment `mini-rag-llm-eval`, in MLflow's default local store: `mlflow.db` plus `mlruns/` for artifacts, both ignored by git. `mlflow ui`, run from the repo root, opens them.
 - **Tracing.** One trace per question: a `predict` chain span with two children, a `RETRIEVER` span whose outputs are the chunks as `{"page_content", "metadata": {"doc_uri", "chunk_id"}}`, and the OpenAI call from `mlflow.openai.autolog()`. The retrieval judges read their context from the `RETRIEVER` span. `predict` is traced explicitly because, with autologging on, `evaluate()` would otherwise make the OpenAI call the root and leave retrieval in a separate trace.
 - Scorers. Each one scores a single `answer_type` and skips the other:
 
@@ -342,7 +346,7 @@ python -m eval.llm_eval [--limit N] [--run-name NAME]
 - Every scorer has `aggregations=[]`, so MLflow logs no `<scorer>/mean`. That metric would only repeat `<scorer>/answerable` (or `/unanswerable`), because each scorer covers one type.
 - **Judge errors fail the run.** MLflow records a failed judge (bad key, API outage) on the row and still reports "Evaluation completed". The script prints up to 10 errors and exits with code 1, so missing scores aren't mistaken for real ones.
 - `--limit N` runs only the first N questions, as a smoke test.
-- **Never runs in PR CI.** The scores vary from run to run and it costs money. The helpers have unit tests (`tests/test_llm_eval.py`) that make no API calls and are skipped when MLflow isn't installed.
+- **Never runs automatically**, and will stay out of CI. The scores vary from run to run and it costs money. The helpers have unit tests (`tests/eval/test_llm_eval.py`) that make no API calls and are skipped when MLflow isn't installed.
 
 ## Configuration — `.env`
 
@@ -356,13 +360,13 @@ python -m eval.llm_eval [--limit N] [--run-name NAME]
 | `TOKENIZERS_PARALLELISM` | no | set to `false` to silence tokenizer warnings |
 | `JUDGE_MODEL` | LLM eval only | `anthropic:/claude-haiku-5-5` |
 | `ANTHROPIC_API_KEY` | LLM eval only | (none) |
-| `LANGFUSE_ENABLED` | no | `false`; `true` sends bot traces to Langfuse |
-| `LANGFUSE_PUBLIC_KEY` | when Langfuse is enabled | (none) |
-| `LANGFUSE_SECRET_KEY` | when Langfuse is enabled | (none) |
-| `LANGFUSE_HOST` | when Langfuse is enabled | `https://cloud.langfuse.com` (EU), or the US host, or a self-hosted URL |
-| `OTEL_SERVICE_NAME` | no | `mini-rag` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | no | unset; when set, every span is also exported over OTLP (e.g. `http://localhost:4318` for the compose Jaeger) |
-| `MLFLOW_TRACKING_URI` | no | unset, i.e. the local `mlflow.db`; `http://localhost:5000` for the compose MLflow |
-| `RAGBOT_USER_ID` | no | the OS user name; sent as `user.id` |
+| `LANGFUSE_ENABLED` (planned, Step 7) | no | `false`; `true` sends bot traces to Langfuse |
+| `LANGFUSE_PUBLIC_KEY` (planned, Step 7) | when Langfuse is enabled | (none) |
+| `LANGFUSE_SECRET_KEY` (planned, Step 7) | when Langfuse is enabled | (none) |
+| `LANGFUSE_HOST` (planned, Step 7) | when Langfuse is enabled | `https://cloud.langfuse.com` (EU), or the US host, or a self-hosted URL |
+| `OTEL_SERVICE_NAME` (planned, Step 7) | no | `mini-rag` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (planned, Step 7) | no | unset; when set, every span is also exported over OTLP (e.g. `http://localhost:4318` for the compose Jaeger) |
+| `MLFLOW_TRACKING_URI` | no | unset, i.e. the local `mlflow.db`; read by MLflow itself; `http://localhost:5000` for the compose MLflow (Step 7) |
+| `RAGBOT_USER_ID` (planned, Step 7) | no | the OS user name; sent as `user.id` |
 
 Secrets come only from the environment. None are written in source code.

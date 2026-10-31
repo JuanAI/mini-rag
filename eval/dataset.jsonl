@@ -1,53 +1,53 @@
-{"id": "q01", "question": "When was Ada Lovelace born?", "answer_type": "answerable", "keyword": "1815", "source": "adalovelace"}
-{"id": "q02", "question": "When did Ada Lovelace die?", "answer_type": "answerable", "keyword": "27 november 1852", "source": "adalovelace"}
-{"id": "q03", "question": "What illness paralysed Ada Lovelace in 1829?", "answer_type": "answerable", "keyword": "measles", "source": "adalovelace"}
-{"id": "q04", "question": "What was the title of the book about flying that Ada planned as a child?", "answer_type": "answerable", "keyword": "flyology", "source": "adalovelace"}
-{"id": "q05", "question": "How much money did Ada Lovelace lose betting on horses?", "answer_type": "answerable", "keyword": "3 000", "source": "adalovelace"}
-{"id": "q06", "question": "Whose article about the Analytical Engine did Ada Lovelace translate?", "answer_type": "answerable", "keyword": "menabrea", "source": "adalovelace"}
-{"id": "q07", "question": "How many explanatory notes did Ada add to her translation?", "answer_type": "answerable", "keyword": "seven long explanatory notes", "source": "adalovelace"}
-{"id": "q08", "question": "Which numbers did Ada Lovelace's notes describe a method to calculate?", "answer_type": "answerable", "keyword": "bernoulli", "source": "adalovelace"}
-{"id": "q09", "question": "Who helped Ada Lovelace with advanced calculus in the 1840s?", "answer_type": "answerable", "keyword": "de morgan", "source": "adalovelace"}
-{"id": "q10", "question": "Who was Ada Lovelace's tutor when she first met Charles Babbage?", "answer_type": "answerable", "keyword": "somerville", "source": "adalovelace"}
-{"id": "q11", "question": "On what date did Ada Lovelace first meet Charles Babbage?", "answer_type": "answerable", "keyword": "5 june 1833", "source": "adalovelace"}
-{"id": "q12", "question": "What nickname did Charles Babbage give Ada Lovelace?", "answer_type": "answerable", "keyword": "enchantress of number", "source": "adalovelace"}
-{"id": "q13", "question": "What disease did Ada Lovelace die of?", "answer_type": "answerable", "keyword": "cervical cancer", "source": "adalovelace"}
-{"id": "q14", "question": "Next to whom was Ada Lovelace buried?", "answer_type": "answerable", "keyword": "buried next to her father", "source": "adalovelace"}
-{"id": "q15", "question": "What number was the military standard for the Ada programming language given?", "answer_type": "answerable", "keyword": "mil std 1815", "source": "adalovelace"}
-{"id": "q16", "question": "What did Nvidia name after Ada Lovelace in 2022?", "answer_type": "answerable", "keyword": "nvidia", "source": "adalovelace"}
-{"id": "q17", "question": "Who was the half-sister that Ada Lovelace never met?", "answer_type": "answerable", "keyword": "allegra", "source": "adalovelace"}
-{"id": "q18", "question": "Whom did Ada Lovelace marry in 1835?", "answer_type": "answerable", "keyword": "william king", "source": "adalovelace"}
-{"id": "q19", "question": "What phrase did Ada Lovelace use to describe her approach to science?", "answer_type": "answerable", "keyword": "poetical science", "source": "adalovelace"}
-{"id": "q20", "question": "On which day of the year is Ada Lovelace Day celebrated?", "answer_type": "answerable", "keyword": "second tuesday of october", "source": "adalovelace"}
-{"id": "q21", "question": "Who first described the sequences later called CRISPR, in 1987?", "answer_type": "answerable", "keyword": "ishino", "source": "crispr"}
-{"id": "q22", "question": "Who proposed the acronym CRISPR together with Francisco Mojica in 2001?", "answer_type": "answerable", "keyword": "jansen", "source": "crispr"}
-{"id": "q23", "question": "What does the acronym CRISPR stand for?", "answer_type": "answerable", "keyword": "clustered regularly interspaced", "source": "crispr"}
-{"id": "q24", "question": "Which archaeal species did Francisco Mojica study repeats in?", "answer_type": "answerable", "keyword": "haloferax", "source": "crispr"}
-{"id": "q25", "question": "Which yogurt researcher discovered phage resistance from CRISPR spacers in 2005?", "answer_type": "answerable", "keyword": "barrangou", "source": "crispr"}
-{"id": "q26", "question": "Who won the 2020 Nobel Prize in Chemistry for CRISPR-Cas9?", "answer_type": "answerable", "keyword": "charpentier", "source": "crispr"}
-{"id": "q27", "question": "Which two small RNAs work together with the Cas9 protein?", "answer_type": "answerable", "keyword": "tracrrna", "source": "crispr"}
-{"id": "q28", "question": "What kind of cut does Cas12a make in double-stranded DNA?", "answer_type": "answerable", "keyword": "staggered", "source": "crispr"}
-{"id": "q29", "question": "What PAM sequence does Cas9 favour?", "answer_type": "answerable", "keyword": "ngg", "source": "crispr"}
-{"id": "q30", "question": "Which research groups first showed CRISPR-Cas9 genome editing in human cells?", "answer_type": "answerable", "keyword": "feng zhang", "source": "crispr"}
-{"id": "q31", "question": "What was the Cas13a nuclease formerly known as?", "answer_type": "answerable", "keyword": "c2c2", "source": "crispr"}
-{"id": "q32", "question": "In how many parts of the world was CRISPR discovered independently?", "answer_type": "answerable", "keyword": "three parts of the world", "source": "crispr"}
-{"id": "q33", "question": "Which bacterium does the simpler Cas9 CRISPR system come from?", "answer_type": "answerable", "keyword": "streptococcus pyogenes", "source": "crispr"}
-{"id": "q34", "question": "Which bacterium gained phage resistance in the 2005 yogurt experiments?", "answer_type": "answerable", "keyword": "thermophilus", "source": "crispr"}
-{"id": "q35", "question": "How many times more massive than Earth is Jupiter?", "answer_type": "answerable", "keyword": "318", "source": "jupiter"}
-{"id": "q36", "question": "What is Jupiter's diameter at the equator in kilometres?", "answer_type": "answerable", "keyword": "142 984", "source": "jupiter"}
-{"id": "q37", "question": "How long does Jupiter take to rotate once?", "answer_type": "answerable", "keyword": "ten hours", "source": "jupiter"}
-{"id": "q38", "question": "What percentage of Jupiter's atmosphere is helium by mass?", "answer_type": "answerable", "keyword": "24 helium", "source": "jupiter"}
-{"id": "q39", "question": "Since what year has the Great Red Spot been continuously recorded?", "answer_type": "answerable", "keyword": "1831", "source": "jupiter"}
-{"id": "q40", "question": "Who may have observed the Great Red Spot as early as 1664?", "answer_type": "answerable", "keyword": "hooke", "source": "jupiter"}
-{"id": "q41", "question": "What generates Jupiter's magnetic field?", "answer_type": "answerable", "keyword": "eddy currents", "source": "jupiter"}
-{"id": "q42", "question": "At least how many moons orbit Jupiter?", "answer_type": "answerable", "keyword": "97 moons", "source": "jupiter"}
-{"id": "q43", "question": "Which of Jupiter's moons is larger than the planet Mercury?", "answer_type": "answerable", "keyword": "larger than the planet mercury", "source": "jupiter"}
-{"id": "q44", "question": "Who discovered the four largest moons of Jupiter in 1610?", "answer_type": "answerable", "keyword": "galileo galilei", "source": "jupiter"}
-{"id": "q45", "question": "Which spacecraft was the first to visit Jupiter, in 1973?", "answer_type": "answerable", "keyword": "pioneer 10", "source": "jupiter"}
-{"id": "q46", "question": "On what date did the Juno spacecraft arrive at Jupiter?", "answer_type": "answerable", "keyword": "july 4 2016", "source": "jupiter"}
-{"id": "q47", "question": "Which comet collided with Jupiter in 1994?", "answer_type": "answerable", "keyword": "shoemaker", "source": "jupiter"}
-{"id": "q48", "question": "When was the JUICE mission launched?", "answer_type": "answerable", "keyword": "april 14 2023", "source": "jupiter"}
-{"id": "q49", "question": "What does the astronomical symbol for Jupiter derive from?", "answer_type": "answerable", "keyword": "zeta", "source": "jupiter"}
-{"id": "q50", "question": "Into which two camps are Jupiter's Trojan asteroids divided?", "answer_type": "answerable", "keyword": "greek and trojan", "source": "jupiter"}
+{"id": "q01", "question": "When was Ada Lovelace born?", "answer_type": "answerable", "keyword": "1815", "source": "adalovelace", "expected_answer": "10 December 1815"}
+{"id": "q02", "question": "When did Ada Lovelace die?", "answer_type": "answerable", "keyword": "27 november 1852", "source": "adalovelace", "expected_answer": "27 November 1852"}
+{"id": "q03", "question": "What illness paralysed Ada Lovelace in 1829?", "answer_type": "answerable", "keyword": "measles", "source": "adalovelace", "expected_answer": "Measles"}
+{"id": "q04", "question": "What was the title of the book about flying that Ada planned as a child?", "answer_type": "answerable", "keyword": "flyology", "source": "adalovelace", "expected_answer": "Flyology"}
+{"id": "q05", "question": "How much money did Ada Lovelace lose betting on horses?", "answer_type": "answerable", "keyword": "3 000", "source": "adalovelace", "expected_answer": "More than £3,000"}
+{"id": "q06", "question": "Whose article about the Analytical Engine did Ada Lovelace translate?", "answer_type": "answerable", "keyword": "menabrea", "source": "adalovelace", "expected_answer": "Luigi Menabrea"}
+{"id": "q07", "question": "How many explanatory notes did Ada add to her translation?", "answer_type": "answerable", "keyword": "seven long explanatory notes", "source": "adalovelace", "expected_answer": "Seven"}
+{"id": "q08", "question": "Which numbers did Ada Lovelace's notes describe a method to calculate?", "answer_type": "answerable", "keyword": "bernoulli", "source": "adalovelace", "expected_answer": "Bernoulli numbers"}
+{"id": "q09", "question": "Who helped Ada Lovelace with advanced calculus in the 1840s?", "answer_type": "answerable", "keyword": "de morgan", "source": "adalovelace", "expected_answer": "Augustus De Morgan"}
+{"id": "q10", "question": "Who was Ada Lovelace's tutor when she first met Charles Babbage?", "answer_type": "answerable", "keyword": "somerville", "source": "adalovelace", "expected_answer": "Mary Somerville"}
+{"id": "q11", "question": "On what date did Ada Lovelace first meet Charles Babbage?", "answer_type": "answerable", "keyword": "5 june 1833", "source": "adalovelace", "expected_answer": "5 June 1833"}
+{"id": "q12", "question": "What nickname did Charles Babbage give Ada Lovelace?", "answer_type": "answerable", "keyword": "enchantress of number", "source": "adalovelace", "expected_answer": "The Enchantress of Number"}
+{"id": "q13", "question": "What disease did Ada Lovelace die of?", "answer_type": "answerable", "keyword": "cervical cancer", "source": "adalovelace", "expected_answer": "Cervical cancer"}
+{"id": "q14", "question": "Next to whom was Ada Lovelace buried?", "answer_type": "answerable", "keyword": "buried next to her father", "source": "adalovelace", "expected_answer": "Her father"}
+{"id": "q15", "question": "What number was the military standard for the Ada programming language given?", "answer_type": "answerable", "keyword": "mil std 1815", "source": "adalovelace", "expected_answer": "MIL-STD-1815, the year of her birth"}
+{"id": "q16", "question": "What did Nvidia name after Ada Lovelace in 2022?", "answer_type": "answerable", "keyword": "nvidia", "source": "adalovelace", "expected_answer": "The Ada Lovelace GPU microarchitecture"}
+{"id": "q17", "question": "Who was the half-sister that Ada Lovelace never met?", "answer_type": "answerable", "keyword": "allegra", "source": "adalovelace", "expected_answer": "Allegra"}
+{"id": "q18", "question": "Whom did Ada Lovelace marry in 1835?", "answer_type": "answerable", "keyword": "william king", "source": "adalovelace", "expected_answer": "William King"}
+{"id": "q19", "question": "What phrase did Ada Lovelace use to describe her approach to science?", "answer_type": "answerable", "keyword": "poetical science", "source": "adalovelace", "expected_answer": "Poetical science"}
+{"id": "q20", "question": "On which day of the year is Ada Lovelace Day celebrated?", "answer_type": "answerable", "keyword": "second tuesday of october", "source": "adalovelace", "expected_answer": "The second Tuesday of October"}
+{"id": "q21", "question": "Who first described the sequences later called CRISPR, in 1987?", "answer_type": "answerable", "keyword": "ishino", "source": "crispr", "expected_answer": "Yoshizumi Ishino and his colleagues at Osaka University"}
+{"id": "q22", "question": "Who proposed the acronym CRISPR together with Francisco Mojica in 2001?", "answer_type": "answerable", "keyword": "jansen", "source": "crispr", "expected_answer": "Ruud Jansen"}
+{"id": "q23", "question": "What does the acronym CRISPR stand for?", "answer_type": "answerable", "keyword": "clustered regularly interspaced", "source": "crispr", "expected_answer": "Clustered regularly interspaced short palindromic repeats"}
+{"id": "q24", "question": "Which archaeal species did Francisco Mojica study repeats in?", "answer_type": "answerable", "keyword": "haloferax", "source": "crispr", "expected_answer": "Haloferax and Haloarcula"}
+{"id": "q25", "question": "Which yogurt researcher discovered phage resistance from CRISPR spacers in 2005?", "answer_type": "answerable", "keyword": "barrangou", "source": "crispr", "expected_answer": "Rodolphe Barrangou"}
+{"id": "q26", "question": "Who won the 2020 Nobel Prize in Chemistry for CRISPR-Cas9?", "answer_type": "answerable", "keyword": "charpentier", "source": "crispr", "expected_answer": "Emmanuelle Charpentier and Jennifer Doudna"}
+{"id": "q27", "question": "Which two small RNAs work together with the Cas9 protein?", "answer_type": "answerable", "keyword": "tracrrna", "source": "crispr", "expected_answer": "crRNA and tracrRNA"}
+{"id": "q28", "question": "What kind of cut does Cas12a make in double-stranded DNA?", "answer_type": "answerable", "keyword": "staggered", "source": "crispr", "expected_answer": "Staggered cuts"}
+{"id": "q29", "question": "What PAM sequence does Cas9 favour?", "answer_type": "answerable", "keyword": "ngg", "source": "crispr", "expected_answer": "5'-NGG-3' (a G-rich PAM)"}
+{"id": "q30", "question": "Which research groups first showed CRISPR-Cas9 genome editing in human cells?", "answer_type": "answerable", "keyword": "feng zhang", "source": "crispr", "expected_answer": "The groups led by Feng Zhang and George Church"}
+{"id": "q31", "question": "What was the Cas13a nuclease formerly known as?", "answer_type": "answerable", "keyword": "c2c2", "source": "crispr", "expected_answer": "C2c2"}
+{"id": "q32", "question": "In how many parts of the world was CRISPR discovered independently?", "answer_type": "answerable", "keyword": "three parts of the world", "source": "crispr", "expected_answer": "Three"}
+{"id": "q33", "question": "Which bacterium does the simpler Cas9 CRISPR system come from?", "answer_type": "answerable", "keyword": "streptococcus pyogenes", "source": "crispr", "expected_answer": "Streptococcus pyogenes"}
+{"id": "q34", "question": "Which bacterium gained phage resistance in the 2005 yogurt experiments?", "answer_type": "answerable", "keyword": "thermophilus", "source": "crispr", "expected_answer": "Streptococcus thermophilus"}
+{"id": "q35", "question": "How many times more massive than Earth is Jupiter?", "answer_type": "answerable", "keyword": "318", "source": "jupiter", "expected_answer": "318 times"}
+{"id": "q36", "question": "What is Jupiter's diameter at the equator in kilometres?", "answer_type": "answerable", "keyword": "142 984", "source": "jupiter", "expected_answer": "142,984 km"}
+{"id": "q37", "question": "How long does Jupiter take to rotate once?", "answer_type": "answerable", "keyword": "ten hours", "source": "jupiter", "expected_answer": "Slightly less than ten hours"}
+{"id": "q38", "question": "What percentage of Jupiter's atmosphere is helium by mass?", "answer_type": "answerable", "keyword": "24 helium", "source": "jupiter", "expected_answer": "24%"}
+{"id": "q39", "question": "Since what year has the Great Red Spot been continuously recorded?", "answer_type": "answerable", "keyword": "1831", "source": "jupiter", "expected_answer": "1831"}
+{"id": "q40", "question": "Who may have observed the Great Red Spot as early as 1664?", "answer_type": "answerable", "keyword": "hooke", "source": "jupiter", "expected_answer": "Robert Hooke"}
+{"id": "q41", "question": "What generates Jupiter's magnetic field?", "answer_type": "answerable", "keyword": "eddy currents", "source": "jupiter", "expected_answer": "Eddy currents within its fluid, metallic hydrogen core"}
+{"id": "q42", "question": "At least how many moons orbit Jupiter?", "answer_type": "answerable", "keyword": "97 moons", "source": "jupiter", "expected_answer": "At least 97"}
+{"id": "q43", "question": "Which of Jupiter's moons is larger than the planet Mercury?", "answer_type": "answerable", "keyword": "larger than the planet mercury", "source": "jupiter", "expected_answer": "Ganymede"}
+{"id": "q44", "question": "Who discovered the four largest moons of Jupiter in 1610?", "answer_type": "answerable", "keyword": "galileo galilei", "source": "jupiter", "expected_answer": "Galileo Galilei"}
+{"id": "q45", "question": "Which spacecraft was the first to visit Jupiter, in 1973?", "answer_type": "answerable", "keyword": "pioneer 10", "source": "jupiter", "expected_answer": "Pioneer 10"}
+{"id": "q46", "question": "On what date did the Juno spacecraft arrive at Jupiter?", "answer_type": "answerable", "keyword": "july 4 2016", "source": "jupiter", "expected_answer": "July 4, 2016"}
+{"id": "q47", "question": "Which comet collided with Jupiter in 1994?", "answer_type": "answerable", "keyword": "shoemaker", "source": "jupiter", "expected_answer": "Comet Shoemaker–Levy 9"}
+{"id": "q48", "question": "When was the JUICE mission launched?", "answer_type": "answerable", "keyword": "april 14 2023", "source": "jupiter", "expected_answer": "April 14, 2023"}
+{"id": "q49", "question": "What does the astronomical symbol for Jupiter derive from?", "answer_type": "answerable", "keyword": "zeta", "source": "jupiter", "expected_answer": "A Greek zeta with a horizontal stroke, an abbreviation for Zeus"}
+{"id": "q50", "question": "Into which two camps are Jupiter's Trojan asteroids divided?", "answer_type": "answerable", "keyword": "greek and trojan", "source": "jupiter", "expected_answer": "Greek and Trojan camps"}
 {"id": "u01", "question": "Can you recommend a good Italian restaurant in London?", "answer_type": "unanswerable"}
 {"id": "u02", "question": "What is the current price of Bitcoin?", "answer_type": "unanswerable"}
 {"id": "u03", "question": "Who won the 2022 FIFA World Cup?", "answer_type": "unanswerable"}

@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 venv/
 .DS_Store
+mlruns/
+mlflow.db
+
+# Private working notes (e.g. about other repos); never committed
+temp-docs/

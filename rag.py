@@ -31,12 +31,6 @@ class RAGBot:
         self.chunks = []
         self.embeddings = []
 
-    def candidate_custom_method(self):
-        """
-        Create your own method as required to complete the task
-        """
-        pass
-
     # This method, after being run in main.py, results in stored embeddings ready for
     # use when the user asks a question. Input parameter is the data folder path
     def read_and_embed_data(self, folder_path):
@@ -67,16 +61,28 @@ class RAGBot:
         document chunks based on similarity, and formats
         a response using those chunks.
         """
+        matches = self.retrieve(question, k)
+        answer = self.generate(question, matches)
+        sources = "\n".join(
+            f"[chunk id {chunk.id}] {chunk.source}"
+            for chunk in matches
+        )
+
+        return f"{answer} \n\nRetrieved sources:\n{sources}"
+
+    def retrieve(self, question, k=5):
+        """The top-k chunks for the question, best match first."""
         question_query = self.sentence_transformer.encode(question, convert_to_numpy=True, normalize_embeddings=True)
 
         scores = self.embeddings @ question_query
 
         if len(scores)<k:
-            matches = [self.chunks[i] for i, _ in enumerate(scores)]
-        else:
-            indices = np.argsort(-scores)[:k]
-            matches = [self.chunks[i] for i in indices]
+            return [self.chunks[i] for i, _ in enumerate(scores)]
+        indices = np.argsort(-scores)[:k]
+        return [self.chunks[i] for i in indices]
 
+    def generate(self, question, matches):
+        """The LLM's answer to the question, using only the given chunks as context."""
         context = "\n\n".join(
             f"[{chunk.id}] Source: {chunk.source} \n{chunk.text}"
             for chunk in matches
@@ -101,10 +107,4 @@ class RAGBot:
                 f"Error raised from OpenAI model {exc}"
             ) from exc
 
-        answer = response.choices[0].message.content
-        sources = "\n".join(
-            f"[chunk id {chunk.id}] {chunk.source}"
-            for chunk in matches
-        )
-
-        return f"{answer} \n\nRetrieved sources:\n{sources}"
+        return response.choices[0].message.content
