@@ -126,7 +126,7 @@ VS Code setup (`.vscode/`, from the earlier version of this project):
 
 **Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 40 passed in ~7 s (9 parser + 11 chunker + 15 rag + 5 cli).
 
-## Step 5 — Retrieval eval (CI) ✅
+## Step 5 — Retrieval eval (pytest gate) ✅
 
 Adapted from the earlier `eval_recall.py`. No retrieval-eval library is needed, and `requirements-dev.txt` already has `pytest`.
 
@@ -134,14 +134,14 @@ Adapted from the earlier `eval_recall.py`. No retrieval-eval library is needed, 
   - the 50 questions from `eval_recall.py` (20 Ada Lovelace, 14 CRISPR, 16 Jupiter);
   - 5 unanswerable questions: a restaurant, Bitcoin, the World Cup, Saturn's moons (close to the corpus, but not in it) and the boiling point of ethanol.
   - `expected_answer` comes in Step 6.
-- [x] `eval/retrieval.py` and `eval/checks.py`, run with `python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline]`.
+- [x] `eval/retrieval.py` and `eval/checks.py`, run with `python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline]`. A `--show` flag was parsed but never implemented, and was removed in Step 6: the per-question rank table already lists the misses.
 
 Changes from the original contract:
 - [x] The gate is on **recall@5** rather than recall@3, because `ask()` now sends the top 5 chunks to the LLM.
 - [x] `--chunk-size` overrides `Chunker.chunk_size` while indexing, as `eval_recall.py` did. `RAGBot` has no `chunker` attribute.
 - [x] `invalid_citations(answer, allowed)` checks against the retrieved chunk ids, because that's how `rag.py` labels passages.
 
-Tests (`tests/test_eval_retrieval.py`, 17):
+Tests (`tests/eval/test_eval_retrieval.py`, 17):
 - [x] `norm`: `£3,000` → `3 000`; `MIL-STD-1815` → `mil std 1815`; and two more.
 - [x] **Dataset:**
   - ids are unique, and the 50 answerable questions have a keyword and a source;
@@ -188,7 +188,7 @@ Open issue found while building the citation check:
 - [x] `requirements-eval.txt`: `mlflow>=3.17` and `anthropic>=2.3`. `mlruns/` and `mlflow.db` (MLflow's default local store) added to `.gitignore`.
 - [x] `expected_answer` for the 50 answerable questions, in the documents' own wording.
 - [x] `RAGBot.ask` split into `retrieve` and `generate`, so the eval can trace retrieval and generation as separate spans. `ask`'s output is unchanged.
-- [x] `eval/llm_eval.py` with the scorers listed in TDD.md, plus offline tests for its helpers (`tests/test_llm_eval.py`, skipped in CI).
+- [x] `eval/llm_eval.py` with the scorers listed in TDD.md, plus offline tests for its helpers (`tests/eval/test_llm_eval.py`, skipped when MLflow isn't installed).
 - [x] Smoke-tested with `--limit 3`, and on one answerable and one unanswerable question. There was no Anthropic key yet, so these runs used `JUDGE_MODEL=openai:/gpt-4.1-mini` to check the wiring only, and were then deleted. What they caught:
   - with OpenAI autologging on, retrieval ended up in a separate trace and the retrieval judges found no context, so `predict` is now traced explicitly;
   - groundedness and relevance scored correct refusals "no", so every judge now scores a single `answer_type`.
@@ -211,7 +211,7 @@ Open issue found while building the citation check:
 
   All earlier runs were deleted and purged, and `baseline` was run again. Faithfulness came in at 0.82 against 0.88 before, with the bot unchanged. About 3 of 50 Haiku verdicts contradict their own rationale, so expect run-to-run noise of about ±0.06 on that metric.
 
-- [x] Retrieval eval in MLflow too: `python -m eval.retrieval --mlflow [--run-name NAME]` logs params, metrics and a `ranks.json` artifact to the `mini-rag-retrieval-eval` experiment. NDCG@10 added to its metrics (0.643 at chunk size 80). The baseline file stays the CI gate.
+- [x] Retrieval eval in MLflow too: `python -m eval.retrieval --mlflow [--run-name NAME]` logs params, metrics and a `ranks.json` artifact to the `mini-rag-retrieval-eval` experiment. NDCG@10 added to its metrics (0.643 at chunk size 80). The baseline file stays the pytest gate.
 
 **Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`. ✅
 
@@ -229,7 +229,7 @@ Why this split: in a survey of about 27 open-source projects that integrate Lang
 - **LLM quality rarely blocks a release.** CI runs ordinary tests; LLM evals run by hand, on a schedule, or only when a prompt changes, and report rather than block.
 - **Mature teams feed production back into testing** (AutoGPT, LibreChat): real questions or tool calls are exported from traces, labelled, and frozen into the test set.
 
-mini-rag already has the two layers (`eval/retrieval.py` in CI, `eval/llm_eval.py` by hand). This step adds the production side, plus the feedback loop below.
+mini-rag already has the two layers (`eval/retrieval.py` as a pytest gate, which CI will run from Step 8; `eval/llm_eval.py` by hand). This step adds the production side, plus the feedback loop below.
 
 - [ ] Add `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp`, `opentelemetry-instrumentation-openai` and `langfuse` to `requirements.txt`, at versions checked against the installed SDKs. The Langfuse API details (span processor, filter hook, scores, datasets) are taken from the installed SDK, not assumed.
 - [ ] Langfuse project: Langfuse Cloud, free tier, in the region the keys are for. Alternatively, self-host with Langfuse's Docker Compose. Add the `LANGFUSE_*` placeholders to `.env.example`.
@@ -270,7 +270,7 @@ Not in this step, and not done by AXO474 either: scoring live production traces 
 - [ ] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets.
 - [ ] Optional: a `llm-eval.yml` workflow triggered manually (`workflow_dispatch`), using API keys stored as repo secrets.
 - [ ] Optional: a `ruff` config.
-- [ ] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`.
+- [x] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`. Done early: each step since Step 4 has been merged by PR.
 
 **Done when**: CI is green on `main`, and the repo on GitHub matches the README.
 

@@ -34,7 +34,8 @@ mini-rag/
 ├── main.py          # interactive CLI
 ├── .vscode/         # run configuration and test settings for VS Code
 ├── eval/            # eval dataset, retrieval metrics, LLM judge eval
-└── tests/           # pytest suite (real embedding model, mocked OpenAI)
+├── docs/            # PLAN.md (build steps) and TDD.md (contracts)
+└── tests/           # pytest suite (real embedding model, mocked OpenAI); eval/ holds the eval tests
 ```
 
 ## Setup
@@ -95,13 +96,48 @@ The tests use the real embedding model and a mocked OpenAI client, so they make 
 
 | What | Tool | Where it runs |
 |---|---|---|
-| Retrieval quality: Recall@k and MRR over 50 questions, each with a keyword that marks its answer passage | plain Python (`python -m eval.retrieval`) | CI, on every push. Fails if recall@5 or MRR drops below `eval/baselines/retrieval.json` |
-| Citation validity | plain Python | CI, on every push |
+| Retrieval quality: Recall@k, MRR and NDCG@10 over 50 questions, each with a keyword that marks its answer passage | plain Python (`python -m eval.retrieval`); add `--mlflow` to log the run for comparison in `mlflow ui` | `pytest` (`tests/eval/test_eval_retrieval.py`). Fails if recall@5 or MRR drops below `eval/baselines/retrieval.json` |
+| Citation validity: every `[n]` in an answer is a retrieved chunk id | plain Python (`eval/checks.py`) | Unit-tested by `pytest`; scored on real answers by the LLM eval |
 | Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm_eval`, then `mlflow ui` |
 
-Current retrieval baseline: **recall@5 0.90, MRR 0.688** (top 1: 0.52, top 3: 0.84, top 10: 0.96).
+There is no CI workflow yet (planned in Step 8 of `docs/PLAN.md`), so `pytest` is run by hand.
 
-CI needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes.
+Current retrieval baseline: **recall@5 0.90, MRR 0.688** (top 1: 0.52, top 3: 0.84, top 10: 0.96; NDCG@10 0.643).
+
+To compare retrieval settings over time, log each run to MLflow (needs `requirements-eval.txt`, no API keys). Runs go to the `mini-rag-retrieval-eval` experiment, with the settings as params and each question's rank in `ranks.json`. The scores are deterministic, so log a run only when a setting changes:
+
+```bash
+python -m eval.retrieval --mlflow --run-name chunk-80
+python -m eval.retrieval --mlflow --chunk-size 120 --run-name chunk-120
+mlflow ui                                      # charts under overall/ (recall_at_k, mrr, ndcg_at_10) and by_document/
+```
+
+`pytest` needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes:
+
+```bash
+pip install -r requirements-eval.txt
+# set ANTHROPIC_API_KEY in .env (see .env.example): the judge is Claude Haiku 5.5, a different model family from the bot
+python -m eval.llm_eval --limit 3              # smoke test
+python -m eval.llm_eval --run-name my-change   # every question
+mlflow ui                                      # compare runs
+```
+
+Each run logs the mean of every judge, overall and per question type (answerable or unanswerable).
+
+Current LLM eval baseline: MLflow run **`baseline`** (generator `gpt-4o-mini`, judge Claude Haiku 5.5, k=5, 55 questions):
+
+| Answerable (50) | | Unanswerable (5) | |
+|---|---|---|---|
+| correctness | 0.88 | refusal | 1.00 |
+| relevance_to_query | 0.96 | citation_validity | 1.00 |
+| faithfulness | 0.82 | | |
+| retrieval_sufficiency (context recall) | 0.83 | | |
+| retrieval_relevance (context precision) | 0.40 | | |
+| citation_validity | 0.68 | | |
+
+Expect the judge to vary from run to run, so compare runs by differences bigger than that. With the bot unchanged, faithfulness has scored 0.88 and 0.82. Reviewing the second run showed about 3 of 50 verdicts where the judge's "no" contradicts its own rationale. Context precision is low by design: each question has one answer passage, and the bot retrieves 5 chunks.
+
+Most citation failures come from the bot citing passages by position (`[1]`, `[2]`) instead of by the chunk ids in its context. The system prompt's "Cite supporting passages with [1], [2] etc." invites this. A few also copy the Wikipedia footnote markers (e.g. `[155]`) that are still in the documents.
 
 ## Limitations
 

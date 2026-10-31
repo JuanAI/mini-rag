@@ -32,17 +32,48 @@
       "cwd": "${workspaceFolder}",
       "env": { "TOKENIZERS_PARALLELISM": "false" },
       "justMyCode": false
+    },
+    {
+      // LLM eval: python -m eval.llm_eval. Calls paid APIs: needs
+      // requirements-eval.txt installed and OPENAI_API_KEY + ANTHROPIC_API_KEY
+      // in .env. Asks for the scope and a run name; compare runs with mlflow ui.
+      "name": "Eval: LLM judges",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "eval.llm_eval",
+      "args": "${input:llmEvalScope} --run-name ${input:llmEvalRunName}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": { "TOKENIZERS_PARALLELISM": "false" },
+      "justMyCode": false
     }
   ],
   "inputs": [
+    {
+      "id": "llmEvalScope",
+      "type": "pickString",
+      "description": "Questions for python -m eval.llm_eval",
+      "options": [
+        { "label": "--limit 3 (smoke test)", "value": "--limit 3" },
+        { "label": "all questions", "value": "" }
+      ],
+      "default": "--limit 3"
+    },
+    {
+      "id": "llmEvalRunName",
+      "type": "promptString",
+      "description": "MLflow run name (no spaces)",
+      "default": "smoke"
+    },
     {
       "id": "evalRetrievalArgs",
       "type": "pickString",
       "description": "Flags for python -m eval.retrieval",
       "options": [
         { "label": "report only", "value": "" },
-        { "label": "--show (top-3 chunks for each miss)", "value": "--show" },
-        { "label": "--update-baseline (write eval/baselines/retrieval.json)", "value": "--update-baseline" }
+        { "label": "--update-baseline (write eval/baselines/retrieval.json)", "value": "--update-baseline" },
+        { "label": "--mlflow (also log the run to MLflow)", "value": "--mlflow" }
       ],
       "default": ""
     }

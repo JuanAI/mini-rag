@@ -1,4 +1,4 @@
-"""Retrieval eval: unit tests for the helpers, plus the CI gate against the committed baseline."""
+"""Retrieval eval: unit tests for the helpers, plus the gate against the committed baseline."""
 import json
 from types import SimpleNamespace
 
@@ -9,7 +9,8 @@ from chunker import Chunk
 from eval.checks import invalid_citations
 from eval.retrieval import (
     BASELINE_PATH, DATASET_PATH, GATED_METRICS, TOLERANCE,
-    evaluate_retrieval, invalid_keywords, load_dataset, norm, rank_of_answer,
+    evaluate_retrieval, invalid_keywords, load_dataset, log_to_mlflow, mlflow_name, ndcg, norm,
+    rank_of_answer, relevant_ranks,
 )
 
 
@@ -41,7 +42,7 @@ class TestDataset:
         assert {item["answer_type"] for item in dataset} == {"answerable", "unanswerable"}
         answerable = [item for item in dataset if item["answer_type"] == "answerable"]
         assert len(answerable) == 50
-        assert all(item["keyword"] and item["source"] for item in answerable)
+        assert all(item["keyword"] and item["source"] and item["expected_answer"] for item in answerable)
         assert all("keyword" not in item for item in dataset if item["answer_type"] == "unanswerable")
 
     def test_every_keyword_exists_in_its_source(self, bot, dataset):
@@ -69,25 +70,66 @@ class TestRankOfAnswer:
         item = {"question": "q", "keyword": "the answer", "source": "adalovelace"}
         assert rank_of_answer(fake_index(), item) is None
 
+    def test_relevant_ranks_lists_every_relevant_chunk(self):
+        item = {"question": "q", "keyword": "", "source": "adalovelace"}  # empty keyword: every Ada chunk
+        assert relevant_ranks(fake_index(), item) == [2, 3]
+
+
+class TestNdcg:
+    @pytest.mark.parametrize("ranks, expected", [
+        ([1], 1.0),                    # the one relevant chunk is first
+        ([3], 0.5),                    # 1/log2(4)
+        ([1, 2], 1.0),                 # both relevant chunks at the top
+        ([2, 3], (1 / np.log2(3) + 0.5) / (1 + 1 / np.log2(3))),
+        ([11], 0.0),                   # outside the top 10
+        ([], 0.0),                     # no relevant chunk at all
+    ])
+    def test_cases(self, ranks, expected):
+        assert ndcg(ranks) == pytest.approx(expected)
+
 
 class TestEvaluateRetrieval:
     def test_metrics_are_rates_and_recall_grows_with_k(self, metrics):
         assert all(0 <= value <= 1 for value in metrics.values())
         recalls = [metrics[f"recall@{k}"] for k in (1, 3, 5, 10)]
         assert recalls == sorted(recalls)
-        assert {"recall@5/adalovelace", "recall@5/crispr", "recall@5/jupiter"} <= metrics.keys()
+        assert {"recall@5/adalovelace", "recall@5/crispr", "recall@5/jupiter", "ndcg@10"} <= metrics.keys()
 
     def test_deterministic(self, bot, dataset, metrics):
         assert evaluate_retrieval(bot, dataset) == metrics
 
 
 def test_retrieval_gate(metrics):
-    """CI gate: fails if retrieval gets worse than the committed baseline."""
+    """Gate: fails if retrieval gets worse than the committed baseline."""
     baseline = json.loads(BASELINE_PATH.read_text())
     for name in GATED_METRICS:
         assert metrics[name] >= baseline[name] - TOLERANCE, (
             f"{name} dropped to {metrics[name]:.3f} (baseline {baseline[name]:.3f})"
         )
+
+
+class TestMlflow:
+    @pytest.mark.parametrize("metric, expected", [
+        ("mrr", "overall/mrr"),
+        ("recall@5", "overall/recall_at_5"),
+        ("ndcg@10", "overall/ndcg_at_10"),
+        ("recall@5/jupiter", "by_document/recall_at_5_jupiter"),
+    ])
+    def test_name_has_a_chart_section(self, metric, expected):
+        assert mlflow_name(metric) == expected
+
+    def test_logs_params_metrics_and_ranks(self, tmp_path, monkeypatch):
+        mlflow = pytest.importorskip("mlflow")
+        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path / 'mlflow.db'}")
+        monkeypatch.chdir(tmp_path)  # artifacts go to ./mlruns, so keep them out of the repo
+        ranks = [{"id": "q01", "source": "adalovelace", "question": "q", "rank": 2}]
+
+        run_id = log_to_mlflow("test", {"k": 5}, {"recall@5": 0.9, "mrr": 0.5}, ranks)
+
+        run = mlflow.get_run(run_id)
+        assert run.data.params == {"k": "5"}
+        assert run.data.metrics == {"overall/recall_at_5": 0.9, "overall/mrr": 0.5}
+        assert mlflow.artifacts.load_dict(f"{run.info.artifact_uri}/ranks.json") == ranks
 
 
 class TestInvalidCitations:

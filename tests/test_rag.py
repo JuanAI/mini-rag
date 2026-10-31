@@ -110,6 +110,14 @@ class TestRetrieval:
 
         assert sent_messages(small.openai_client)[1]["content"].count("Source: ") == 1
 
+    def test_retrieve_returns_the_chunks_ask_sends_best_first(self, bot):
+        bot.openai_client = mock_client()
+        chunks = bot.retrieve("What are the four Galilean moons?", k=3)
+        bot.ask("What are the four Galilean moons?", k=3)
+        context = sent_messages(bot.openai_client)[1]["content"]
+        assert context.startswith(f"Context:\n[{chunks[0].id}] Source: ")
+        assert all(f"[{c.id}] Source: " in context for c in chunks)
+
 
 class TestGeneration:
     def test_request(self, bot):

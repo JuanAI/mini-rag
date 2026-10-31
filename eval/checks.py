@@ -1,4 +1,4 @@
-"""Deterministic answer checks: no LLM needed, so they run in CI and as eval scorers."""
+"""Deterministic answer checks: no LLM needed, so they run in pytest and as eval scorers."""
 import re
 from collections.abc import Iterable
 
