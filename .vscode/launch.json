@@ -20,6 +20,26 @@
       "justMyCode": false
     },
     {
+      // Same as above, with traces sent to the local Langfuse (make langfuse-up
+      // first; the keys are the local project's, see docker-compose.yml). Like
+      // make run-langfuse-local.
+      "name": "RAGBot: main.py (local Langfuse)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.py",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "TOKENIZERS_PARALLELISM": "false",
+        "LANGFUSE_ENABLED": "true",
+        "LANGFUSE_HOST": "http://localhost:3100",
+        "LANGFUSE_PUBLIC_KEY": "pk-lf-local-mini-rag",
+        "LANGFUSE_SECRET_KEY": "sk-lf-local-mini-rag"
+      },
+      "justMyCode": false
+    },
+    {
       // Retrieval eval: python -m eval.retrieval [flags]. Asks which flags to
       // pass each time it starts (see the docstring in eval/retrieval.py).
       "name": "Eval: retrieval",

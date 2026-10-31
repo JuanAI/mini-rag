@@ -14,26 +14,36 @@ MAIN = str(ROOT / "main.py")
 class FakeBot:
     def __init__(self):
         self.folder = None
+        self.calls = []
 
     def read_and_embed_data(self, folder_path):
         self.folder = folder_path
 
-    def ask(self, question):
+    def ask(self, question, session_id=None, user_id=None):
+        self.calls.append({"session_id": session_id, "user_id": user_id})
         if question == "fail":
             raise Exception("Error raised from OpenAI model Error code: 401 - key expired")
         return f"answer to {question}"
 
 
 def run_main(inputs):
-    """Run main.py in-process with a fake bot; `inputs` are returned by input() or raised."""
+    """Run main.py in-process with a fake bot; `inputs` are returned by input() or raised.
+    Returns the bot, so tests can check what ask() was called with."""
+    bots = []
+
+    def make_bot():
+        bots.append(FakeBot())
+        return bots[0]
+
     def fake_input(prompt=""):
         item = inputs.pop(0)
         if isinstance(item, BaseException):
             raise item
         return item
 
-    with patch("rag.RAGBot", FakeBot), patch("builtins.input", fake_input):
+    with patch("rag.RAGBot", make_bot), patch("builtins.input", fake_input):
         runpy.run_path(MAIN, run_name="__main__")
+    return bots[0]
 
 
 def test_answers_each_question(capsys):
@@ -58,8 +68,34 @@ def test_ctrl_d_or_ctrl_c_exits_cleanly(stop):
     run_main([stop])  # must return normally, not raise
 
 
+def test_one_session_id_per_run_and_user_from_env(monkeypatch):
+    monkeypatch.setenv("RAGBOT_USER_ID", "juan")
+    first = run_main(["a", "b", EOFError()])
+    second = run_main(["c", EOFError()])
+
+    ids = {call["session_id"] for call in first.calls}
+    assert len(ids) == 1 and None not in ids
+    assert second.calls[0]["session_id"] not in ids
+    assert all(call["user_id"] == "juan" for call in first.calls)
+
+
+def test_user_defaults_to_the_os_user(monkeypatch):
+    monkeypatch.delenv("RAGBOT_USER_ID", raising=False)
+    with patch("getpass.getuser", return_value="os-user"):
+        bot = run_main(["a", EOFError()])
+    assert bot.calls[0]["user_id"] == "os-user"
+
+
+@pytest.mark.parametrize("stop", [EOFError(), KeyboardInterrupt()])
+def test_traces_are_flushed_on_exit(stop):
+    with patch("telemetry.flush_telemetry") as flush:
+        run_main(["a", stop])
+    flush.assert_called_once()
+
+
 def test_real_run_from_repo_root_exits_cleanly_on_eof():
-    env = {**os.environ, "OPENAI_API_KEY": "test-key", "TOKENIZERS_PARALLELISM": "false"}
+    env = {**os.environ, "OPENAI_API_KEY": "test-key", "TOKENIZERS_PARALLELISM": "false",
+           "LANGFUSE_ENABLED": "false"}
     env.pop("AZURE_OPENAI_ENDPOINT", None)
 
     result = subprocess.run(
