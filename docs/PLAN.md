@@ -8,7 +8,7 @@ Each step follows the same loop:
 3. **Refactor**: clean up while the tests stay green.
 4. Commit.
 
-Steps 1–5 run without API keys; Step 3 tests mock OpenAI. Only Step 6 calls paid APIs.
+Steps 1–5 run without API keys; Step 3 tests mock OpenAI. Only Step 6 calls paid APIs. Step 7's tests need no network; its manual check needs Langfuse keys (the free tier is enough).
 
 ---
 
@@ -126,7 +126,7 @@ VS Code setup (`.vscode/`, from the earlier version of this project):
 
 **Done when**: `python main.py` works from the repo root, and the VS Code run button starts the bot. ✅ 40 passed in ~7 s (9 parser + 11 chunker + 15 rag + 5 cli).
 
-## Step 5 — Retrieval eval (CI) ✅
+## Step 5 — Retrieval eval (pytest gate) ✅
 
 Adapted from the earlier `eval_recall.py`. No retrieval-eval library is needed, and `requirements-dev.txt` already has `pytest`.
 
@@ -134,14 +134,14 @@ Adapted from the earlier `eval_recall.py`. No retrieval-eval library is needed, 
   - the 50 questions from `eval_recall.py` (20 Ada Lovelace, 14 CRISPR, 16 Jupiter);
   - 5 unanswerable questions: a restaurant, Bitcoin, the World Cup, Saturn's moons (close to the corpus, but not in it) and the boiling point of ethanol.
   - `expected_answer` comes in Step 6.
-- [x] `eval/retrieval.py` and `eval/checks.py`, run with `python -m eval.retrieval [--chunk-size N] [--k N] [--show] [--update-baseline]`.
+- [x] `eval/retrieval.py` and `eval/checks.py`, run with `python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline]`. A `--show` flag was parsed but never implemented, and was removed in Step 6: the per-question rank table already lists the misses.
 
 Changes from the original contract:
 - [x] The gate is on **recall@5** rather than recall@3, because `ask()` now sends the top 5 chunks to the LLM.
 - [x] `--chunk-size` overrides `Chunker.chunk_size` while indexing, as `eval_recall.py` did. `RAGBot` has no `chunker` attribute.
 - [x] `invalid_citations(answer, allowed)` checks against the retrieved chunk ids, because that's how `rag.py` labels passages.
 
-Tests (`tests/test_eval_retrieval.py`, 17):
+Tests (`tests/eval/test_eval_retrieval.py`, 17):
 - [x] `norm`: `£3,000` → `3 000`; `MIL-STD-1815` → `mil std 1815`; and two more.
 - [x] **Dataset:**
   - ids are unique, and the 50 answerable questions have a keyword and a source;
@@ -183,23 +183,94 @@ Open issue found while building the citation check:
 
 **Done when**: `pytest` runs the retrieval gate in seconds, with no API keys. ✅ 57 passed in ~6 s (40 before + 17 eval).
 
-## Step 6 — LLM answer eval (on demand)
+## Step 6 — LLM answer eval (on demand) ✅
 
-- [ ] Add `requirements-eval.txt` containing `mlflow` (a version with `mlflow.genai`) and `anthropic`. Add `mlruns/` to `.gitignore`.
-- [ ] Implement `eval/llm_eval.py` with the scorers listed in TDD.md. Smoke-test it with `--limit 3`.
-- [ ] Do a full run and check about 10 judge verdicts by hand. If the judge disagrees with you, tighten the `refusal` instructions.
-- [ ] Record the baseline run name and its scores in the README.
+- [x] `requirements-eval.txt`: `mlflow>=3.17` and `anthropic>=2.3`. `mlruns/` and `mlflow.db` (MLflow's default local store) added to `.gitignore`.
+- [x] `expected_answer` for the 50 answerable questions, in the documents' own wording.
+- [x] `RAGBot.ask` split into `retrieve` and `generate`, so the eval can trace retrieval and generation as separate spans. `ask`'s output is unchanged.
+- [x] `eval/llm_eval.py` with the scorers listed in TDD.md, plus offline tests for its helpers (`tests/eval/test_llm_eval.py`, skipped when MLflow isn't installed).
+- [x] Smoke-tested with `--limit 3`, and on one answerable and one unanswerable question. There was no Anthropic key yet, so these runs used `JUDGE_MODEL=openai:/gpt-4.1-mini` to check the wiring only, and were then deleted. What they caught:
+  - with OpenAI autologging on, retrieval ended up in a separate trace and the retrieval judges found no context, so `predict` is now traced explicitly;
+  - groundedness and relevance scored correct refusals "no", so every judge now scores a single `answer_type`.
+- [x] Full run with the Claude judge (Haiku 5.5): 55 questions, 0 judge errors. Every failing verdict checked by hand (about 40):
+  - **Real bot failures, judged correctly**:
+    - q07 and q12 answered "don't know" (retrieval misses: rank 86 and rank 15);
+    - q11 gave no day, because the retrieved chunk has none;
+    - q36 gave the equatorial-minus-polar difference (9,276 km) as the diameter;
+    - q39 said 1878 instead of 1831;
+    - q06 doubled "Federico" in Menabrea's name.
+  - **Judge too strict**: q05 sufficiency and q16 groundedness.
+  - **Label errors, fixed in the dataset**: q14 expected "Lord Byron", a name the retrieved text doesn't give; q37 said "about" ten hours where the document says "slightly less than".
+  - `refusal` was right on all 5 unanswerable questions, so its instructions were not tightened.
+- [x] Baseline recorded in the README: run `baseline`.
+- [x] Follow-ups after walking through the charts:
+  - `retrieval_groundedness` renamed `faithfulness`;
+  - `retrieval_relevance` (context precision) added;
+  - MLflow's duplicate `/mean` metrics dropped;
+  - judge errors now fail the run (the lesson from AXO474). On its first run, this check caught a bug in the renaming wrappers.
 
-**Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`.
+  All earlier runs were deleted and purged, and `baseline` was run again. Faithfulness came in at 0.82 against 0.88 before, with the bot unchanged. About 3 of 50 Haiku verdicts contradict their own rationale, so expect run-to-run noise of about ±0.06 on that metric.
 
-## Step 7 — Polish and publish
+- [x] Retrieval eval in MLflow too: `python -m eval.retrieval --mlflow [--run-name NAME]` logs params, metrics and a `ranks.json` artifact to the `mini-rag-retrieval-eval` experiment. NDCG@10 added to its metrics (0.643 at chunk size 80). The baseline file stays the pytest gate.
+
+**Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`. ✅
+
+Found by this step, for a later fix:
+- [ ] **Citations**: 15 of 50 answerable answers cite passages by position (`[1]`, `[2]`) rather than by chunk id, which the system prompt's "Cite supporting passages with [1], [2] etc." invites. A few cite Wikipedia footnote markers (e.g. `[155]`), which `txtParser` leaves in the text. Possible fixes: give an id example from the context in the prompt, and strip `[n]` footnotes when parsing.
+
+## Step 7 — Production tracing with Langfuse
+
+Goal: run mini-rag the way a production service is observed, modelled on AXO474's RAG API. Live requests are traced with OpenTelemetry, and the LLM-relevant spans go to Langfuse, grouped by session and user. MLflow stays the offline eval tool. Contracts: TDD.md → Observability.
+
+Why this split: in a survey of about 27 open-source projects that integrate Langfuse (app builders, RAG apps, agents, frameworks; October 2026), this is the common pattern:
+- **Langfuse is used to watch production, not to test.** Nearly all use it for tracing only, a few also record user feedback as scores, and none of the repos uses its datasets or experiments for pre-release testing. It is usually one tracing provider among several.
+- **Offline eval is done with something else.** That means the framework's own evaluators, RAGAS, a hand-written script, or a separate platform (Onyx: Langfuse for tracing, Braintrust for evals).
+- **Evals come in two layers:** cheap deterministic checks (retrieval hit@k or rank, expected tool calls) and LLM-judge checks (faithfulness, correctness) run by hand when something changes.
+- **LLM quality rarely blocks a release.** CI runs ordinary tests; LLM evals run by hand, on a schedule, or only when a prompt changes, and report rather than block.
+- **Mature teams feed production back into testing** (AutoGPT, LibreChat): real questions or tool calls are exported from traces, labelled, and frozen into the test set.
+
+mini-rag already has the two layers (`eval/retrieval.py` as a pytest gate, which CI will run from Step 8; `eval/llm_eval.py` by hand). This step adds the production side, plus the feedback loop below.
+
+- [ ] Add `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp`, `opentelemetry-instrumentation-openai` and `langfuse` to `requirements.txt`, at versions checked against the installed SDKs. The Langfuse API details (span processor, filter hook, scores, datasets) are taken from the installed SDK, not assumed.
+- [ ] Langfuse project: Langfuse Cloud, free tier, in the region the keys are for. Alternatively, self-host with Langfuse's Docker Compose. Add the `LANGFUSE_*` placeholders to `.env.example`.
+
+Tests first (`tests/test_telemetry.py`; spans captured with OTel's in-memory exporter, no network):
+- [ ] `setup_langfuse()` returns `False` and attaches nothing when `LANGFUSE_ENABLED` is unset or `false`.
+- [ ] With `LANGFUSE_ENABLED=true` and a key missing, it returns `False`, logs a warning, and doesn't raise.
+- [ ] `should_export_to_langfuse`: `httpx`, `requests`, `urllib` and `aiohttp` instrumentation scopes → `False`; the `mini_rag` and OpenAI instrumentor scopes → `True`.
+- [ ] `setup_telemetry()` is idempotent and sets `service.name`.
+- [ ] `ask()` (mocked OpenAI client) emits one trace, with root `rag.ask` and children `rag.retrieve` and `rag.generate`.
+- [ ] `rag.ask` carries `langfuse.observation.input`, `langfuse.observation.output`, `session.id` and `user.id`. `rag.retrieve` carries the retrieved chunk ids; `rag.generate` carries the model and token counts.
+- [ ] On `OpenAIError`, the spans have status `ERROR` with the exception recorded, and `ask()` still raises as before.
+- [ ] `ask()` without ids, and with no provider set up, behaves exactly as before. The existing `test_rag.py` and `test_cli.py` pass unchanged.
+- [ ] `main.py` passes the same `session_id` to every `ask()` in one run, and flushes on exit (Ctrl-D, Ctrl-C).
+
+Then:
+- [ ] Implement `telemetry.py`, the spans in `rag.py`, and the session and flush in `main.py`.
+- [ ] Manual check: with `LANGFUSE_ENABLED=true`, ask three questions in one CLI session. In Langfuse, **Sessions** should show one session with three traces, and each trace should show `retrieve` and `generate` with chunk ids, model, tokens and cost. Then ask one question with the network off: the bot still answers, and a warning is logged.
+- [ ] `docker-compose.yml` with two opt-in profiles, following AXO474's `evals` and `obs` profiles (TDD.md → Local services):
+  - `evals`: an MLflow server (official image, same version as the installed `mlflow` client) on port 5000, with a named volume.
+  - `obs`: Jaeger, with its UI on 16686 and OTLP on 4317/4318.
+
+  Nothing starts by default, and Langfuse isn't in it: like AXO474, mini-rag uses Langfuse Cloud.
+- [ ] Check `docker compose --profile obs up -d`: with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, a CLI question shows up in Jaeger with **every** span, including the HTTP ones, while Langfuse gets only the filtered ones. This stands in for AXO474's Datadog pipe.
+- [ ] Check `docker compose --profile evals up -d`: `MLFLOW_TRACKING_URI=http://localhost:5000 python -m eval.llm_eval --limit 3` logs to the container, and the run appears at http://localhost:5000. Without the variable, the eval still uses the local `mlflow.db`.
+- [ ] Optional, AXO474's deterministic eval in Langfuse: `python -m eval.retrieval --langfuse` publishes a dataset plus an experiment run, with per-item `rank` and `hit@5` and run-level recall@k and MRR. Run it at chunk sizes 80 and 120 and compare the two runs in Langfuse → Datasets → Runs.
+- [ ] Production → test set: `python -m eval.from_langfuse [--session ID | --since DATE]` reads `rag.ask` traces from Langfuse and prints candidate rows in the `eval/dataset.jsonl` format: the question, the bot's answer and retrieved chunk ids, with `id`, `answer_type`, `keyword`, `source` and `expected_answer` left blank. It never appends by itself: a person picks the interesting ones (wrong answers, refusals, thumbs-down) and labels them, and the retrieval and LLM evals then cover them from the next run. Tested offline: a trace-to-row helper over a stored trace fixture, no network.
+- [ ] README: a "Tracing" section with setup, what each span holds, and the Langfuse/MLflow split.
+
+Not in this step, and not done by AXO474 either: scoring live production traces with LLM judges. Online grading would be its own follow-up.
+
+**Done when**: a CLI session appears in Langfuse as one session of complete traces; turning Langfuse off or breaking it never affects answers; and `pytest` passes with no network.
+
+## Step 8 — Polish and publish
 
 - [ ] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders.
 - [ ] Check that README examples match real output. Replace the illustrative sample session with a real one.
 - [ ] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets.
 - [ ] Optional: a `llm-eval.yml` workflow triggered manually (`workflow_dispatch`), using API keys stored as repo secrets.
 - [ ] Optional: a `ruff` config.
-- [ ] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`.
+- [x] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`. Done early: each step since Step 4 has been merged by PR.
 
 **Done when**: CI is green on `main`, and the repo on GitHub matches the README.
 
@@ -207,4 +278,4 @@ Open issue found while building the citation check:
 
 ## Out of scope for now
 
-Persistence for the vector index, a reranker, more file types (PDF, Markdown), conversation memory and streaming responses. Each would be its own follow-up, with contracts added to TDD.md first.
+Persistence for the vector index, a reranker, more file types (PDF, Markdown), conversation memory, streaming responses, and LLM-judge scoring of live traces in Langfuse. Each would be its own follow-up, with contracts added to TDD.md first. Step 7's sessions group traces only; the bot still answers each question without memory of the earlier ones.
