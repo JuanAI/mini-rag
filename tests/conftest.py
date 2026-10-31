@@ -8,6 +8,11 @@ ROOT = Path(__file__).resolve().parent.parent
 MODEL_DIR = ROOT / "models" / "all-MiniLM-L6-v2"
 DATA_DIR = ROOT / "data"
 
+# Tests never send traces, even when .env enables Langfuse or an OTLP endpoint:
+# load_dotenv() doesn't override variables that are already set.
+os.environ["LANGFUSE_ENABLED"] = "false"
+os.environ.pop("OTEL_EXPORTER_OTLP_ENDPOINT", None)
+
 
 @pytest.fixture(scope="session")
 def model():

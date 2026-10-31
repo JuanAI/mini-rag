@@ -207,7 +207,7 @@ Open issue found while building the citation check:
   - `retrieval_groundedness` renamed `faithfulness`;
   - `retrieval_relevance` (context precision) added;
   - MLflow's duplicate `/mean` metrics dropped;
-  - judge errors now fail the run (the lesson from a production enterprise app). On its first run, this check caught a bug in the renaming wrappers.
+  - judge errors now fail the run, so missing scores aren't mistaken for real ones. On its first run, this check caught a bug in the renaming wrappers.
 
   All earlier runs were deleted and purged, and `baseline` was run again. Faithfulness came in at 0.82 against 0.88 before, with the bot unchanged. About 3 of 50 Haiku verdicts contradict their own rationale, so expect run-to-run noise of about ±0.06 on that metric.
 
@@ -220,7 +220,7 @@ Found by this step, for a later fix:
 
 ## Step 7 — Production tracing with Langfuse
 
-Goal: run mini-rag the way a production service is observed, modelled on a production enterprise app's RAG API. Live requests are traced with OpenTelemetry, and the LLM-relevant spans go to Langfuse, grouped by session and user. MLflow stays the offline eval tool. Contracts: TDD.md → Observability.
+Goal: run mini-rag the way a production service is observed, modelled on a production enterprise-level RAG app. Live requests are traced with OpenTelemetry, and the LLM-relevant spans go to Langfuse, grouped by session and user. MLflow stays the offline eval tool. Contracts: TDD.md → Observability.
 
 Why this split: in a survey of about 27 open-source projects that integrate Langfuse (app builders, RAG apps, agents, frameworks; October 2026), this is the common pattern:
 - **Langfuse is used to watch production, not to test.** Nearly all use it for tracing only, a few also record user feedback as scores, and none of the repos uses its datasets or experiments for pre-release testing. It is usually one tracing provider among several.
@@ -231,35 +231,41 @@ Why this split: in a survey of about 27 open-source projects that integrate Lang
 
 mini-rag already has the two layers (`eval/retrieval.py` as a pytest gate, which CI will run from Step 8; `eval/llm_eval.py` by hand). This step adds the production side, plus the feedback loop below.
 
-- [ ] Add `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp`, `opentelemetry-instrumentation-openai` and `langfuse` to `requirements.txt`, at versions checked against the installed SDKs. The Langfuse API details (span processor, filter hook, scores, datasets) are taken from the installed SDK, not assumed.
-- [ ] Langfuse project: Langfuse Cloud, free tier, in the region the keys are for. Alternatively, self-host with Langfuse's Docker Compose. Add the `LANGFUSE_*` placeholders to `.env.example`.
+- [x] Add `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http` (only OTLP/HTTP is used, so no gRPC), `opentelemetry-instrumentation-openai` and `langfuse` to `requirements.txt`, at versions checked against the installed SDKs (Langfuse 5.1, OTel 1.45). The Langfuse API details (span processor, filter hook, scores, datasets) are taken from the installed SDK, not assumed.
+- [ ] Langfuse project: Langfuse Cloud, free tier, in the region the keys are for. Alternatively, self-host with Langfuse's Docker Compose.
+- [x] Add the `LANGFUSE_*` placeholders to `.env.example`.
 
 Tests first (`tests/test_telemetry.py`; spans captured with OTel's in-memory exporter, no network):
-- [ ] `setup_langfuse()` returns `False` and attaches nothing when `LANGFUSE_ENABLED` is unset or `false`.
-- [ ] With `LANGFUSE_ENABLED=true` and a key missing, it returns `False`, logs a warning, and doesn't raise.
-- [ ] `should_export_to_langfuse`: `httpx`, `requests`, `urllib` and `aiohttp` instrumentation scopes → `False`; the `mini_rag` and OpenAI instrumentor scopes → `True`.
-- [ ] `setup_telemetry()` is idempotent and sets `service.name`.
-- [ ] `ask()` (mocked OpenAI client) emits one trace, with root `rag.ask` and children `rag.retrieve` and `rag.generate`.
-- [ ] `rag.ask` carries `langfuse.observation.input`, `langfuse.observation.output`, `session.id` and `user.id`. `rag.retrieve` carries the retrieved chunk ids; `rag.generate` carries the model and token counts.
-- [ ] On `OpenAIError`, the spans have status `ERROR` with the exception recorded, and `ask()` still raises as before.
-- [ ] `ask()` without ids, and with no provider set up, behaves exactly as before. The existing `test_rag.py` and `test_cli.py` pass unchanged.
-- [ ] `main.py` passes the same `session_id` to every `ask()` in one run, and flushes on exit (Ctrl-D, Ctrl-C).
+- [x] `setup_langfuse()` returns `False` and attaches nothing when `LANGFUSE_ENABLED` is unset or `false`.
+- [x] With `LANGFUSE_ENABLED=true` and a key missing, it returns `False`, logs a warning, and doesn't raise.
+- [x] `should_export_to_langfuse`: `httpx`, `requests`, `urllib` and `aiohttp` instrumentation scopes → `False`; the `mini_rag` and OpenAI instrumentor scopes → `True`.
+- [x] `setup_telemetry()` is idempotent and sets `service.name`.
+- [x] `ask()` (mocked OpenAI client) emits one trace, with root `rag.ask` and children `rag.retrieve` and `rag.generate`.
+- [x] `rag.ask` carries `langfuse.observation.input`, `langfuse.observation.output`, `session.id` and `user.id`. `rag.retrieve` carries the retrieved chunk ids; `rag.generate` carries the model and token counts, as `rag.*` attributes: `gen_ai.*` names would make Langfuse cost the call a second time next to the OpenAI instrumentor's span.
+- [x] On `OpenAIError`, the spans have status `ERROR` with the exception recorded, and `ask()` still raises as before.
+- [x] `ask()` without ids, and with no provider set up, behaves exactly as before. `test_rag.py` passes unchanged. `test_cli.py`'s fake bot had to accept the two new keyword arguments.
+- [x] `main.py` passes the same `session_id` to every `ask()` in one run, and flushes on exit (Ctrl-D, Ctrl-C).
+- [x] `session.id` and `user.id` are on every span of the trace (Langfuse's `propagate_attributes`), not only `rag.ask`: Langfuse v4 sums a session's or user's cost over the spans that carry the id, and with the ids on the root only the Sessions and Users pages showed no cost.
 
 Then:
-- [ ] Implement `telemetry.py`, the spans in `rag.py`, and the session and flush in `main.py`.
+- [x] Implement `telemetry.py`, the spans in `rag.py`, and the session and flush in `main.py`. ✅ 111 passed (24 new). Checked with a real OpenAI client over a fake HTTP transport: the instrumentor's `openai.chat` span sits under `rag.generate` and passes the Langfuse filter.
 - [ ] Manual check: with `LANGFUSE_ENABLED=true`, ask three questions in one CLI session. In Langfuse, **Sessions** should show one session with three traces, and each trace should show `retrieve` and `generate` with chunk ids, model, tokens and cost. Then ask one question with the network off: the bot still answers, and a warning is logged.
-- [ ] `docker-compose.yml` with two opt-in profiles, following a production enterprise app's `evals` and `obs` profiles (TDD.md → Local services):
+- [x] `docker-compose.yml` with two opt-in profiles, `evals` and `obs` (TDD.md → Local services):
   - `evals`: an MLflow server (official image, same version as the installed `mlflow` client) on port 5000, with a named volume.
   - `obs`: Jaeger, with its UI on 16686 and OTLP on 4317/4318.
 
-  Nothing starts by default, and Langfuse isn't in it: like a production enterprise app, mini-rag uses Langfuse Cloud.
-- [ ] Check `docker compose --profile obs up -d`: with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, a CLI question shows up in Jaeger with **every** span, including the HTTP ones, while Langfuse gets only the filtered ones. This stands in for a production enterprise app's Datadog pipe.
-- [ ] Check `docker compose --profile evals up -d`: `MLFLOW_TRACKING_URI=http://localhost:5000 python -m eval.llm_eval --limit 3` logs to the container, and the run appears at http://localhost:5000. Without the variable, the eval still uses the local `mlflow.db`.
-- [ ] Optional, a production enterprise app's deterministic eval in Langfuse: `python -m eval.retrieval --langfuse` publishes a dataset plus an experiment run, with per-item `rank` and `hit@5` and run-level recall@k and MRR. Run it at chunk sizes 80 and 120 and compare the two runs in Langfuse → Datasets → Runs.
-- [ ] Production → test set: `python -m eval.from_langfuse [--session ID | --since DATE]` reads `rag.ask` traces from Langfuse and prints candidate rows in the `eval/dataset.jsonl` format: the question, the bot's answer and retrieved chunk ids, with `id`, `answer_type`, `keyword`, `source` and `expected_answer` left blank. It never appends by itself: a person picks the interesting ones (wrong answers, refusals, thumbs-down) and labels them, and the retrieval and LLM evals then cover them from the next run. Tested offline: a trace-to-row helper over a stored trace fixture, no network.
-- [ ] README: a "Tracing" section with setup, what each span holds, and the Langfuse/MLflow split.
+  Nothing starts by default, and Langfuse isn't in it: mini-rag uses Langfuse Cloud. Images pinned: `ghcr.io/mlflow/mlflow:v3.17.2`, `jaegertracing/jaeger:2.22.0`. Checked with `docker compose config`; not started yet.
+- [x] A `langfuse` compose profile for running Langfuse offline: Langfuse's official v4 compose file, pinned (4.63.0), localhost-only ports, telemetry off, and a `mini-rag` project with API keys created on first start. Makefile: `langfuse-up`, `langfuse-down`, `langfuse-reset`, `run-langfuse-local`. Checked with `docker compose config`; not started yet.
+- [x] Check `docker compose --profile langfuse up -d` and `make run-langfuse-local`. ✅ Langfuse 4.63.0 healthy in about 10 s after the databases; the auto-created keys pass `auth_check()`. Three CLI questions gave 3 traces in **one** session, 4 observations each (`rag.ask` root with session and user, `rag.retrieve`, `rag.generate`, `openai.chat`). Only `openai.chat` is a costed GENERATION (`gpt-4o-mini`, 690 tokens, $0.00011), so cost isn't counted twice. Host ports moved to 3100/9190 after a clash with another local Langfuse on 3000/9090.
 
-Not in this step, and not done by a production enterprise app either: scoring live production traces with LLM judges. Online grading would be its own follow-up.
+  Facts for the Langfuse-reading tasks below: v4 runs in "events_only" mode, where `GET /api/public/traces` and `/observations` return an error; reads go through `/api/public/v2/observations` (`lf.api.observations.get_many(name=..., session_id=..., fields=..., expand_metadata="attributes")`), whose input and output come back as raw strings. Span attributes land in metadata as `attributes.<name>`, e.g. `attributes.rag.chunk_ids`.
+- [ ] Check `docker compose --profile obs up -d`: with `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`, a CLI question shows up in Jaeger with every span. mini-rag doesn't instrument `httpx`, so there are no HTTP spans for the Langfuse filter to drop; the filter guards against an HTTP instrumentor being added later. This stands in for a production APM pipeline.
+- [ ] Check `docker compose --profile evals up -d`: `MLFLOW_TRACKING_URI=http://localhost:5000 python -m eval.llm_eval --limit 3` logs to the container, and the run appears at http://localhost:5000. Without the variable, the eval still uses the local `mlflow.db`.
+- [ ] Optional, a deterministic eval in Langfuse: `python -m eval.retrieval --langfuse` publishes a dataset plus an experiment run, with per-item `rank` and `hit@5` and run-level recall@k and MRR. Run it at chunk sizes 80 and 120 and compare the two runs in Langfuse → Datasets → Runs.
+- [ ] Production → test set: `python -m eval.from_langfuse [--session ID | --since DATE]` reads `rag.ask` traces from Langfuse and prints candidate rows in the `eval/dataset.jsonl` format: the question, the bot's answer and retrieved chunk ids, with `id`, `answer_type`, `keyword`, `source` and `expected_answer` left blank. It never appends by itself: a person picks the interesting ones (wrong answers, refusals, thumbs-down) and labels them, and the retrieval and LLM evals then cover them from the next run. Tested offline: a trace-to-row helper over a stored trace fixture, no network.
+- [x] README: a "Tracing" section with setup, what each span holds, and the Langfuse/MLflow split.
+
+Not in this step: scoring live production traces with LLM judges. Online grading would be its own follow-up.
 
 **Done when**: a CLI session appears in Langfuse as one session of complete traces; turning Langfuse off or breaking it never affects answers; and `pytest` passes with no network.
 

@@ -30,8 +30,11 @@ mini-rag/
 ├── parser.py        # file → Document
 ├── chunker.py       # token-based overlapping chunker
 ├── rag.py           # RAGBot: index, retrieve, ask
+├── telemetry.py     # OpenTelemetry tracing, Langfuse export
 ├── models/          # bundled all-MiniLM-L6-v2 embedding model (~87 MB)
 ├── main.py          # interactive CLI
+├── docker-compose.yml  # optional Jaeger, MLflow and Langfuse, opt-in profiles
+├── Makefile         # shortcuts for the commands below (`make help`)
 ├── .vscode/         # run configuration and test settings for VS Code
 ├── eval/            # eval dataset, retrieval metrics, LLM judge eval
 ├── docs/            # PLAN.md (build steps) and TDD.md (contracts)
@@ -59,6 +62,8 @@ cp .env.example .env   # then add your OpenAI or Azure OpenAI settings
 | `OPENAI_API_VERSION` | Azure | API version, e.g. `2024-10-21` |
 | `MODEL_NAME` | both | Chat model (default `gpt-4.1-mini`); for Azure, the deployment name |
 
+Or use the Makefile: `make install-dev`, then `make help` lists every command (run, test, evals, local containers).
+
 The embedding model is bundled in `models/all-MiniLM-L6-v2`, so nothing is downloaded at runtime. Run commands from the repo root, because the model path is relative.
 
 ## Usage
@@ -82,6 +87,66 @@ bot = RAGBot()
 bot.read_and_embed_data("data/")
 print(bot.ask("What does CRISPR stand for?", k=3))
 ```
+
+## Tracing
+
+The bot emits OpenTelemetry spans for every question. Tracing is off unless configured, and a tracing failure never breaks an answer.
+
+| Span | Holds |
+|---|---|
+| `rag.ask` (root) | question, answer, `session.id`, `user.id`, k |
+| `rag.retrieve` | retrieved chunk ids, sources, top score |
+| `rag.generate` | model, input and output tokens |
+| `openai.chat` | prompt, completion, model and token usage, from the OpenAI instrumentor |
+
+The code only talks to OpenTelemetry. One `TracerProvider` (`telemetry.py`) hands every finished span to each attached processor, and each one exports on its own, so Jaeger never forwards to Langfuse or the reverse:
+
+```
+ rag.ask ─► rag.retrieve / rag.generate ─► openai.chat      (each step is a span)
+                        │
+ ┌──────────────────────┼──────── mini-rag process ─────────────────────────┐
+ │                      ▼                                                   │
+ │        OpenTelemetry SDK: TracerProvider (setup_telemetry)               │
+ │                      │                                                   │
+ │          ┌───────────┴──────────────────────┐                            │
+ │          ▼                                  ▼                            │
+ │  OTLP exporter                      Langfuse span processor              │
+ │  if OTEL_EXPORTER_OTLP_ENDPOINT     if LANGFUSE_ENABLED=true             │
+ │  is set; all spans                  (setup_langfuse); HTTP spans dropped │
+ └──────────┼──────────────────────────────────┼────────────────────────────┘
+            │ OTLP/HTTP                        │ OTLP/HTTP + API keys
+            ▼                                  ▼
+  ┌────────────────────┐            ┌────────────────────────────┐
+  │ Jaeger :4318       │            │ Langfuse :3100 (local)     │
+  │ UI :16686          │            │ or cloud.langfuse.com      │
+  │ timing and errors  │            │ prompts, tokens, cost,     │
+  │ (an APM in prod)   │            │ sessions, users, scores    │
+  └────────────────────┘            └────────────────────────────┘
+```
+
+Either path, both or neither can be on. With neither, spans are created and dropped at almost no cost. A production setup often puts an OpenTelemetry Collector between the app and the backends to do this fan-out; mini-rag does it in-process.
+
+To send traces to [Langfuse](https://langfuse.com) (the free cloud tier is enough), set these in `.env`:
+
+```bash
+LANGFUSE_ENABLED=true
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_HOST=https://cloud.langfuse.com   # must match the keys' region (EU here; US is us.cloud.langfuse.com)
+```
+
+Or run Langfuse locally, with no account: `make langfuse-up` starts a self-hosted copy (six containers, about 3–4 GB of RAM; the first start takes a minute or two) and creates a `mini-rag` project with API keys. Then `make run-langfuse-local` starts the bot with those keys, without editing `.env`, and the traces appear at http://localhost:3100 (the login is in the comments of `docker-compose.yml`). `make langfuse-down` stops it and keeps the data; `make langfuse-reset` deletes it.
+
+Each `python main.py` run is one Langfuse session, so **Sessions** shows a conversation's questions together. `user.id` is `RAGBOT_USER_ID`, or your OS user name. If HTTP-client instrumentation is ever added, its spans are kept out of Langfuse by a filter.
+
+To see **every** span locally, as well as or instead of Langfuse, run Jaeger and point the OTLP exporter at it:
+
+```bash
+docker compose --profile obs up -d
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 python main.py   # then open http://localhost:16686
+```
+
+Langfuse is for the live bot and MLflow for offline evals: `eval/llm_eval.py` never sets up tracing, so eval runs don't reach Langfuse. To log evals to an MLflow server instead of the local `mlflow.db`, run `docker compose --profile evals up -d` and set `MLFLOW_TRACKING_URI=http://localhost:5000`.
 
 ## Tests
 
