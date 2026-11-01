@@ -4,12 +4,14 @@ A small retrieval-augmented generation (RAG) bot built from scratch: no LangChai
 
 ```
 Me: What are the four Galilean moons?
-RAGBot: Io, Europa, Ganymede and Callisto [1].
+RAGBot: Io, Europa, Ganymede and Callisto [118].
 
 Retrieved sources:
-[1] jupiter.txt
-[2] jupiter.txt
-[3] jupiter.txt
+[chunk id 127] data/jupiter.txt
+[chunk id 118] data/jupiter.txt
+[chunk id 122] data/jupiter.txt
+[chunk id 126] data/jupiter.txt
+[chunk id 124] data/jupiter.txt
 ```
 
 ## How it works
@@ -18,7 +20,7 @@ Retrieved sources:
 2. **Chunk**: `chunker.py` splits text by *tokens*, not characters, using the embedding model's own tokenizer. Each chunk is 96 tokens: 80 new ones plus 16 repeated from the end of the previous chunk, so context at the boundaries isn't lost. Chunk text is decoded from the tokens, so it is lowercase. Each chunk keeps its source filename.
 3. **Embed**: chunks are batch-encoded with [`all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) and L2-normalized, so a dot product equals cosine similarity.
 4. **Retrieve**: the question is embedded the same way, scored against every chunk with a single matrix product, and the top *k* (default 5) are used.
-5. **Generate**: the retrieved chunks go into the prompt with numbered source labels. The system prompt tells the model to answer only from that context, treat it as data rather than instructions, cite passages as `[1]`, `[2]`, and say when the answer isn't there.
+5. **Generate**: the retrieved chunks go into the prompt, each labelled with its chunk id (`[118] Source: …`). Wikipedia footnote markers like `[155]` are removed from that prompt text only, so the model can't mistake them for passage ids; the indexed chunks keep them, so retrieval is unaffected. The system prompt tells the model to answer only from that context, treat it as data rather than instructions, cite passages by their id (with a real id from the context as the example), and say when the answer isn't there.
 
 A NumPy matrix is enough at this scale. There's no persistence, reranker or conversation memory, by design.
 
@@ -199,20 +201,22 @@ mlflow ui                                      # compare runs
 
 Each run logs the mean of every judge, overall and per question type (answerable or unanswerable).
 
-Current LLM eval baseline: MLflow run **`baseline`** (generator `gpt-4o-mini`, judge Claude Haiku 5.5, k=5, 55 questions):
+Current LLM eval results: MLflow run **`citation-fix`** (generator `gpt-4o-mini`, judge Claude Haiku 5.5, k=5, 55 questions, 0 judge errors), with the earlier run **`baseline`** for comparison:
 
-| Answerable (50) | | Unanswerable (5) | |
-|---|---|---|---|
-| correctness | 0.88 | refusal | 1.00 |
-| relevance_to_query | 0.96 | citation_validity | 1.00 |
-| faithfulness | 0.82 | | |
-| retrieval_sufficiency (context recall) | 0.83 | | |
-| retrieval_relevance (context precision) | 0.40 | | |
-| citation_validity | 0.68 | | |
+| Answerable (50) | `citation-fix` | `baseline` |
+|---|---|---|
+| correctness | 0.86 | 0.88 |
+| relevance_to_query | 0.94 | 0.96 |
+| faithfulness | 0.92 | 0.82 |
+| retrieval_sufficiency (context recall) | 0.86 | 0.83 |
+| retrieval_relevance (context precision) | 0.36 | 0.40 |
+| **citation_validity** | **1.00** | **0.68** |
+
+On the 5 unanswerable questions, refusal and citation_validity are 1.00 in both runs.
 
 Expect the judge to vary from run to run, so compare runs by differences bigger than that. With the bot unchanged, faithfulness has scored 0.88 and 0.82. Reviewing the second run showed about 3 of 50 verdicts where the judge's "no" contradicts its own rationale. Context precision is low by design: each question has one answer passage, and the bot retrieves 5 chunks.
 
-Most citation failures come from the bot citing passages by position (`[1]`, `[2]`) instead of by the chunk ids in its context. The system prompt's "Cite supporting passages with [1], [2] etc." invites this. A few also copy the Wikipedia footnote markers (e.g. `[155]`) that are still in the documents.
+In `baseline`, 15 of 50 answers cited passages by position (`[1]`, `[2]`) instead of by chunk id, because the prompt said "Cite supporting passages with [1], [2] etc.", and a few copied Wikipedia footnote markers (e.g. `[155]`). `citation-fix` changed the prompt to cite by id and removed the markers from the prompt text, and every citation now names a retrieved chunk. Retrieval didn't change, so the context precision difference is judge noise; the faithfulness gain is bigger than the usual ±0.06 but comes from one run.
 
 ## Limitations
 

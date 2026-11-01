@@ -8,7 +8,7 @@ import pytest
 from openai import OpenAIError
 
 import rag
-from rag import RAGBot
+from rag import RAGBot, strip_footnotes
 
 
 def mock_client(answer: str = "An answer [0].") -> Mock:
@@ -119,6 +119,41 @@ class TestRetrieval:
         assert all(f"[{c.id}] Source: " in context for c in chunks)
 
 
+class TestStripFootnotes:
+    @pytest.mark.parametrize("text, expected", [
+        ("in bacteria and archaea. [ 3 ] each", "in bacteria and archaea. each"),
+        ("adaptive immunity. [ 3 ] [ 6 ] [ 7 ] crispr", "adaptive immunity. crispr"),
+        ("william king, [ a ] and mary", "william king, and mary"),
+        ("i - g [ note 1 ] gsu0054", "i - g gsu0054"),
+        ("oxford [ citation needed ]", "oxford"),
+        # A marker cut in two by a chunk edge.
+        ("25 ] [ 26 ] in 1953 crick", "in 1953 crick"),
+        ("] in june 1829", "in june 1829"),
+        ("her life. [ 14", "her life."),
+        ("the institute. [", "the institute."),
+    ])
+    def test_removes_reference_markers(self, text, expected):
+        assert strip_footnotes(text) == expected
+
+    @pytest.mark.parametrize("text", [
+        "a diameter of 11, 000 km [ 6, 800 mi ]",
+        "her notes [ the analytical engine ]",
+        "the inheritance of acquired traits [ lamarck ]",
+    ])
+    def test_keeps_other_brackets(self, text):
+        assert strip_footnotes(text) == text
+
+    def test_prompt_context_has_no_markers(self, bot):
+        question = "What are the four Galilean moons?"
+        bot.openai_client = mock_client()
+        chunks = bot.retrieve(question, k=5)
+        bot.ask(question, k=5)
+        context = sent_messages(bot.openai_client)[1]["content"]
+
+        assert any(rag.FOOTNOTE.search(c.text) for c in chunks)  # else this tests nothing
+        assert not rag.FOOTNOTE.search(context)
+
+
 class TestGeneration:
     def test_request(self, bot):
         bot.openai_client = mock_client()
@@ -132,9 +167,18 @@ class TestGeneration:
         assert system["role"] == "system"
         assert "Answer using only the supplied context. If it does not contain the answer, " \
                "say you don't know based on these documents. " in system["content"]
-        assert "Cite supporting passages with [1], [2] etc. Be concise." in system["content"]
+        assert "Cite supporting passages by that id" in system["content"]
+        assert "not by their position. Be concise." in system["content"]
         assert user["content"].startswith("Context:\n[")
         assert user["content"].endswith("\n\nQuestion: What does CRISPR stand for?")
+
+    def test_citation_example_is_a_retrieved_chunk_id(self, bot):
+        # A fixed example like [1] got copied as a citation even when no passage had that id.
+        bot.openai_client = mock_client()
+        top = bot.retrieve("What are the four Galilean moons?", k=3)[0]
+        bot.ask("What are the four Galilean moons?", k=3)
+        system = sent_messages(bot.openai_client)[0]["content"]
+        assert f"e.g. [{top.id}]," in system
 
     def test_model_defaults_to_gpt_4_1_mini(self, bot):
         bot.openai_client = mock_client()
