@@ -1,0 +1,51 @@
+# The LLM answer eval, run by hand from the Actions tab. It calls paid APIs, so it
+# never runs on its own. Needs the repo secrets OPENAI_API_KEY and ANTHROPIC_API_KEY.
+# The MLflow store (mlflow.db, mlruns/) is uploaded as an artifact: download it and
+# open it with `mlflow ui` to see the run.
+name: LLM eval
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Only the first N questions (empty = all 55)"
+        required: false
+        default: "3"
+      run_name:
+        description: "MLflow run name"
+        required: false
+        default: "ci"
+      model:
+        description: "Generator model (MODEL_NAME)"
+        required: false
+        default: "gpt-4o-mini"
+
+jobs:
+  llm-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TOKENIZERS_PARALLELISM: "false"
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      MODEL_NAME: ${{ inputs.model }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --extra eval
+      - name: Run the eval
+        env:
+          LIMIT: ${{ inputs.limit }}
+          RUN_NAME: ${{ inputs.run_name }}
+        run: uv run --no-sync python -m eval.llm ${LIMIT:+--limit "$LIMIT"} --run-name "$RUN_NAME"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlflow-${{ inputs.run_name }}
+          path: |
+            mlflow.db
+            mlruns/
+          if-no-files-found: ignore

@@ -1,0 +1,45 @@
+# Unit tests, the retrieval gate and the citation checks on every pull request: when it
+# is opened or reopened, and on each new commit pushed to it. Not on pushes without a PR.
+# No secrets: the embedding model is committed under models/, and OpenAI is mocked.
+name: CI
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync ruff check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the minimum: langfuse 5 needs it.
+        python-version: ["3.11", "3.12", "3.13"]
+    env:
+      TOKENIZERS_PARALLELISM: "false"
+      # Proves the tests never download a model: they use the one in models/.
+      HF_HUB_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      # --locked fails if uv.lock is out of date with pyproject.toml. On Linux, torch
+      # comes from the CPU index (see [tool.uv.sources] in pyproject.toml).
+      - run: uv sync --locked --extra dev
+      - run: uv run --no-sync pytest

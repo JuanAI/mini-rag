@@ -8,7 +8,7 @@
 services:
   mlflow:
     profiles: [evals]
-    image: ghcr.io/mlflow/mlflow:v3.17.2  # same version as mlflow in requirements-eval.txt
+    image: ghcr.io/mlflow/mlflow:v3.17.2  # same version as mlflow in uv.lock
     command: >
       mlflow server --host 0.0.0.0 --port 5000
       --backend-store-uri sqlite:////mlflow/mlflow.db

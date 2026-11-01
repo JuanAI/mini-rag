@@ -7,7 +7,7 @@ from openai import AzureOpenAI, OpenAI, OpenAIError
 from sentence_transformers import SentenceTransformer
 
 from chunker import Chunker
-from parser import Document, Parser, ParserFactory
+from parser import Parser, ParserFactory
 from telemetry import tracer
 import numpy as np
 
