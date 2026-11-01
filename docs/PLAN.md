@@ -101,7 +101,7 @@ Tests (`tests/test_rag.py`, 15, with OpenAI mocked):
 - [x] `tests/conftest.py` loads the bundled model and provides a session-scoped `bot` with a dummy key.
 
 Manual check with a real key:
-- [ ] A question for each topic, plus one outside the documents (e.g. a restaurant recommendation), which should get "don't know".
+- [x] A question for each topic, plus one outside the documents (e.g. a restaurant recommendation), which should get "don't know".
 
 **Done when**: the mocked tests pass offline (✅ 35 passed in ~5 s: 9 parser + 11 chunker + 15 rag), and the manual check answers correctly with correct citations.
 
@@ -179,7 +179,7 @@ Misses at k=5: q06 (Menabrea's article, rank 10), q07 (seven notes, rank 86), q1
 The default of 80 is the best valid size. Any size above about 211 overflows the model, because each chunk is the size plus 20%.
 
 Open issue found while building the citation check:
-- [ ] `rag.py` labels passages with chunk ids (`[37] Source: …`), but its prompt says *"Cite supporting passages with [1], [2] etc."* The model may cite numbers that match no passage. Fix the prompt or the labels before Step 6.
+- [x] `rag.py` labels passages with chunk ids (`[37] Source: …`), but its prompt says *"Cite supporting passages with [1], [2] etc."* The model may cite numbers that match no passage. Fixed after Step 7, see the citations item in Step 6.
 
 **Done when**: `pytest` runs the retrieval gate in seconds, with no API keys. ✅ 57 passed in ~6 s (40 before + 17 eval).
 
@@ -216,7 +216,10 @@ Open issue found while building the citation check:
 **Done when**: one command produces a run in `mlflow ui` with overall scores and scores per `answer_type`. ✅
 
 Found by this step, for a later fix:
-- [ ] **Citations**: 15 of 50 answerable answers cite passages by position (`[1]`, `[2]`) rather than by chunk id, which the system prompt's "Cite supporting passages with [1], [2] etc." invites. A few cite Wikipedia footnote markers (e.g. `[155]`), which `txtParser` leaves in the text. Possible fixes: give an id example from the context in the prompt, and strip `[n]` footnotes when parsing.
+- [x] **Citations**: 15 of 50 answerable answers cite passages by position (`[1]`, `[2]`) rather than by chunk id, which the system prompt's "Cite supporting passages with [1], [2] etc." invites. A few cite Wikipedia footnote markers (e.g. `[155]`), which `txtParser` leaves in the text. Fixed:
+  - the prompt now says each passage starts with its id and to cite by it, with the top chunk's real id as the example;
+  - `strip_footnotes` in `rag.py` removes the markers from the prompt text only. Stripping them in the parser was tried first: it moved chunk boundaries (372 → 343 chunks) and cut recall@5 from 0.90 to 0.84, so the index keeps them;
+  - run `citation-fix`: citation_validity 0.68 → **1.00**, faithfulness 0.82 → 0.92, the rest within noise (README).
 
 ## Step 7 — Production tracing with Langfuse ✅
 
