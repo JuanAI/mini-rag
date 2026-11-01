@@ -240,7 +240,7 @@ Evaluation is split by cost and determinism:
 
 | Suite | Runs | Needs | Fails the build? |
 |---|---|---|---|
-| Retrieval (custom, keyword-matched) | `pytest`, locally and in CI (`ci.yml`, every PR: opened, reopened, each new commit) | Embedding model only | Yes, if a metric drops below baseline |
+| Retrieval (custom, keyword-matched) | `pytest`, locally and in CI (`pr.yml`, every PR: opened, reopened, each new commit) | Embedding model only | Yes, if a metric drops below baseline |
 | Citation checks (unit tests of `invalid_citations`) | `pytest`, same as above | Nothing | Yes |
 | LLM answers (MLflow GenAI) | On demand, when the prompt or model changes: locally, or `llm-eval.yml` (manual trigger, repo secrets) | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
 | Retrieval, published to Langfuse (optional) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |

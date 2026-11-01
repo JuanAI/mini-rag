@@ -175,7 +175,7 @@ ruff check .      # or: make test, make lint
 
 The tests use the real embedding model and a mocked OpenAI client, so they make no paid API calls.
 
-GitHub Actions runs the same on every pull request, when it's opened or reopened and on each new commit (`.github/workflows/ci.yml`): `uv sync --locked --extra dev`, then `ruff check` once and `pytest` on Python 3.11, 3.12 and 3.13. `--locked` fails the build if `uv.lock` is out of date with `pyproject.toml`. It needs no secrets, because the embedding model is committed and OpenAI is mocked. `HF_HUB_OFFLINE=1` makes sure nothing is downloaded.
+GitHub Actions runs the same on every pull request, when it's opened or reopened and on each new commit (`.github/workflows/pr.yml`): `uv sync --locked --extra dev`, then `ruff check` once and `pytest` on Python 3.11, 3.12 and 3.13. `--locked` fails the build if `uv.lock` is out of date with `pyproject.toml`. It needs no secrets, because the embedding model is committed and OpenAI is mocked. `HF_HUB_OFFLINE=1` makes sure nothing is downloaded.
 
 ## Evaluation
 
