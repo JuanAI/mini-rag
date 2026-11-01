@@ -1,4 +1,4 @@
-"""LLM eval helpers. No API calls; skipped where requirements-eval.txt isn't installed."""
+"""eval/llm/metrics.py helpers. No API calls; skipped where requirements-eval.txt isn't installed."""
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +10,7 @@ import pandas as pd  # noqa: E402  (installed with mlflow)
 from chunker import Chunk  # noqa: E402
 from mlflow.entities import Feedback  # noqa: E402
 
-from eval.llm_eval import (  # noqa: E402
+from eval.llm.metrics import (  # noqa: E402
     as_documents, citation_validity, context_precision, judge_errors, means_by_answer_type,
     to_records, to_score,
 )

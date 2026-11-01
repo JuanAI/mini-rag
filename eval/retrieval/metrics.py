@@ -1,4 +1,4 @@
-"""Retrieval evaluation for RAGBot: Recall@k, MRR and NDCG@10 over the questions in eval/dataset.jsonl.
+"""Retrieval metrics: Recall@k, MRR and NDCG@10 over the questions in eval/dataset.jsonl.
 
 A chunk is relevant to a question when it comes from the question's `source`
 document and contains its `keyword`, a phrase found only in the answer passage.
@@ -11,19 +11,10 @@ discounted by rank.
 No LLM call is made. Retrieval is reproduced exactly as RAGBot.ask does it:
 encode the question, dot product against the stored normalised embeddings,
 rank by score.
-
-Usage (from the repo root):
-    python -m eval.retrieval                    # recall at 1/3/5/10, MRR, misses
-    python -m eval.retrieval --k 8              # also report recall at your k
-    python -m eval.retrieval --chunk-size 120   # re-chunk with a different size
-    python -m eval.retrieval --update-baseline  # write eval/baselines/retrieval.json
-    python -m eval.retrieval --mlflow --run-name chunk-80  # also log a run to MLflow
 """
-import argparse
 import json
 import os
 import re
-import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,7 +22,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import numpy as np  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DATASET_PATH = ROOT / "eval" / "dataset.jsonl"
 BASELINE_PATH = ROOT / "eval" / "baselines" / "retrieval.json"
 
@@ -40,7 +31,6 @@ ASK_K = 5  # RAGBot.ask's default k: the chunks the LLM actually sees
 NDCG_K = 10
 GATED_METRICS = (f"recall@{ASK_K}", "mrr")
 TOLERANCE = 0.02
-EXPERIMENT = "mini-rag-retrieval-eval"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
@@ -110,14 +100,21 @@ def ndcg(ranks: list[int], k: int = NDCG_K) -> float:
     return float(dcg / ideal) if ideal else 0.0
 
 
+def metrics_from_ranks(all_ranks: list[list[int]], ks=K_VALUES) -> dict[str, float]:
+    """Recall@k, MRR and NDCG@10 from each question's relevant-chunk ranks."""
+    ranks = [r[0] if r else None for r in all_ranks]
+    metrics = {f"recall@{k}": recall(ranks, k) for k in ks}
+    metrics["mrr"] = sum(1 / r for r in ranks if r) / len(ranks)
+    metrics[f"ndcg@{NDCG_K}"] = sum(ndcg(r) for r in all_ranks) / len(all_ranks)
+    return metrics
+
+
 def evaluate_retrieval(bot, dataset: list[dict], ks=K_VALUES) -> dict[str, float]:
     items = answerable(dataset)
     all_ranks = [relevant_ranks(bot, item) for item in items]
     ranks = [r[0] if r else None for r in all_ranks]
 
-    metrics = {f"recall@{k}": recall(ranks, k) for k in ks}
-    metrics["mrr"] = sum(1 / r for r in ranks if r) / len(ranks)
-    metrics[f"ndcg@{NDCG_K}"] = sum(ndcg(r) for r in all_ranks) / len(all_ranks)
+    metrics = metrics_from_ranks(all_ranks, ks)
     for source in sorted({item["source"] for item in items}):
         source_ranks = [r for item, r in zip(items, ranks) if item["source"] == source]
         metrics[f"recall@{ASK_K}/{source}"] = recall(source_ranks, ASK_K)
@@ -144,98 +141,3 @@ def build_bot(chunk_size: int | None = None):
     with patch.object(chunker.Chunker, "get_chunks", get_chunks):
         bot.read_and_embed_data(str(ROOT / "data"))
     return bot
-
-
-def mlflow_name(metric: str) -> str:
-    """The MLflow name for a metric: 'mrr' -> 'overall/mrr',
-    'recall@5/jupiter' -> 'by_document/recall_at_5_jupiter'.
-
-    MLflow rejects '@' in names, and its chart view only draws a metric unasked
-    when the name has a '<section>/' prefix.
-    """
-    metric = metric.replace("@", "_at_")
-    if "/" in metric:
-        return "by_document/" + metric.replace("/", "_")
-    return "overall/" + metric
-
-
-def log_to_mlflow(run_name: str | None, params: dict, metrics: dict[str, float], ranks: list[dict]) -> str:
-    """Log one retrieval run to MLflow and return its run id. Plain params and metrics,
-    no traces: there is no LLM call to trace. Needs requirements-eval.txt."""
-    import mlflow
-
-    mlflow.set_experiment(EXPERIMENT)
-    with mlflow.start_run(run_name=run_name) as run:
-        mlflow.log_params(params)
-        mlflow.log_metrics({mlflow_name(name): value for name, value in metrics.items()})
-        mlflow.log_dict(ranks, "ranks.json")
-    return run.info.run_id
-
-
-def main() -> int:
-    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
-    ap.add_argument("--k", type=int, help="extra k to report")
-    ap.add_argument("--chunk-size", type=int, help="override Chunker.chunk_size before indexing")
-    ap.add_argument("--update-baseline", action="store_true", help=f"write {BASELINE_PATH.relative_to(ROOT)}")
-    ap.add_argument("--mlflow", action="store_true", help=f"also log the run to the MLflow experiment '{EXPERIMENT}'")
-    ap.add_argument("--run-name", help="MLflow run name (with --mlflow)")
-    args = ap.parse_args()
-
-    ks = tuple(sorted(set(K_VALUES) | ({args.k} if args.k else set())))
-    dataset = load_dataset(DATASET_PATH)
-    items = answerable(dataset)
-    bot = build_bot(args.chunk_size)
-    print(f"index: {len(bot.chunks)} chunks | questions: {len(items)} answerable\n")
-
-    invalid = invalid_keywords(bot, dataset)
-    if invalid:
-        print("INVALID KEYWORDS (fix the dataset first): " + ", ".join(invalid))
-        return 1
-
-    ranks = [rank_of_answer(bot, item) for item in items]
-    print(f"{'id':>4}  {'rank':>4}  question")
-    for item, r in zip(items, ranks):
-        flag = "" if r and r <= ASK_K else f"  <-- miss at k={ASK_K}"
-        print(f"{item['id']:>4}  {str(r) if r else '-':>4}  {item['question']}{flag}")
-
-    metrics = evaluate_retrieval(bot, dataset, ks)
-    print("\nRecall@k (answer chunk in top k):")
-    for k in ks:
-        print(f"  recall@{k:<3} {metrics[f'recall@{k}']:.2f}")
-    print(f"\nMRR         {metrics['mrr']:.3f}")
-    print(f"NDCG@{NDCG_K}     {metrics[f'ndcg@{NDCG_K}']:.3f}")
-    print(f"\nRecall@{ASK_K} by document:")
-    for name, value in metrics.items():
-        if "/" in name:
-            print(f"  {name.split('/')[1]:<12} {value:.2f}")
-
-    if args.update_baseline:
-        if args.chunk_size:
-            print("\nRefusing to write a baseline for a non-default --chunk-size.")
-            return 1
-        baseline = {name: round(metrics[name], 4) for name in GATED_METRICS}
-        BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        BASELINE_PATH.write_text(json.dumps(baseline, indent=2) + "\n")
-        print(f"\nBaseline written to {BASELINE_PATH.relative_to(ROOT)}: {baseline}")
-
-    if args.mlflow:
-        from chunker import Chunker
-
-        defaults = Chunker(bot.sentence_transformer)
-        params = {
-            "k": ASK_K,
-            "chunk_size": args.chunk_size or defaults.chunk_size,
-            "chunk_overlap": defaults.chunk_overlap,
-            "embedding_model": EMBEDDING_MODEL,
-            "chunks": len(bot.chunks),
-            "questions": len(items),
-        }
-        rows = [{"id": item["id"], "source": item["source"], "question": item["question"], "rank": r}
-                for item, r in zip(items, ranks)]
-        run_id = log_to_mlflow(args.run_name, params, metrics, rows)
-        print(f"\nRun {run_id} in experiment '{EXPERIMENT}'. Open it with: mlflow ui")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

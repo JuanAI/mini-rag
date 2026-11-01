@@ -36,7 +36,7 @@ mini-rag/
 ├── docker-compose.yml  # optional Jaeger, MLflow and Langfuse, opt-in profiles
 ├── Makefile         # shortcuts for the commands below (`make help`)
 ├── .vscode/         # run configuration and test settings for VS Code
-├── eval/            # eval dataset, retrieval metrics, LLM judge eval
+├── eval/            # eval dataset; retrieval/ (metrics, MLflow and Langfuse logging); llm/ (MLflow LLM judges)
 ├── docs/            # PLAN.md (build steps) and TDD.md (contracts)
 └── tests/           # pytest suite (real embedding model, mocked OpenAI); eval/ holds the eval tests
 ```
@@ -146,7 +146,7 @@ docker compose --profile obs up -d
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 python main.py   # then open http://localhost:16686
 ```
 
-Langfuse is for the live bot and MLflow for offline evals: `eval/llm_eval.py` never sets up tracing, so eval runs don't reach Langfuse. To log evals to an MLflow server instead of the local `mlflow.db`, run `docker compose --profile evals up -d` and set `MLFLOW_TRACKING_URI=http://localhost:5000`.
+Langfuse is for the live bot and MLflow for offline evals: `eval/llm/` never sets up tracing, so eval runs don't reach Langfuse. To log evals to an MLflow server instead of the local `mlflow.db`, run `docker compose --profile evals up -d` and set `MLFLOW_TRACKING_URI=http://localhost:5000`.
 
 ## Tests
 
@@ -161,9 +161,9 @@ The tests use the real embedding model and a mocked OpenAI client, so they make 
 
 | What | Tool | Where it runs |
 |---|---|---|
-| Retrieval quality: Recall@k, MRR and NDCG@10 over 50 questions, each with a keyword that marks its answer passage | plain Python (`python -m eval.retrieval`); add `--mlflow` to log the run for comparison in `mlflow ui` | `pytest` (`tests/eval/test_eval_retrieval.py`). Fails if recall@5 or MRR drops below `eval/baselines/retrieval.json` |
+| Retrieval quality: Recall@k, MRR and NDCG@10 over 50 questions, each with a keyword that marks its answer passage | plain Python (`python -m eval.retrieval`); add `--mlflow` or `--langfuse` to log the run for comparison in `mlflow ui` or Langfuse | `pytest` (`tests/eval/retrieval/test_metrics.py`). Fails if recall@5 or MRR drops below `eval/baselines/retrieval.json` |
 | Citation validity: every `[n]` in an answer is a retrieved chunk id | plain Python (`eval/checks.py`) | Unit-tested by `pytest`; scored on real answers by the LLM eval |
-| Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm_eval`, then `mlflow ui` |
+| Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm`, then `mlflow ui` |
 
 There is no CI workflow yet (planned in Step 8 of `docs/PLAN.md`), so `pytest` is run by hand.
 
@@ -177,13 +177,23 @@ python -m eval.retrieval --mlflow --chunk-size 120 --run-name chunk-120
 mlflow ui                                      # charts under overall/ (recall_at_k, mrr, ndcg_at_10) and by_document/
 ```
 
+Or compare them in Langfuse: `--langfuse` publishes the 50 questions as the dataset `mini-rag-retrieval` and records an experiment run on it, with each question's `rank` and `hit@5` and the run's recall@k, MRR and NDCG@10. It uses the `LANGFUSE_*` keys and host, and re-runs update the same dataset items. With the local Langfuse (`make langfuse-up`):
+
+```bash
+make eval-retrieval-langfuse-local RUN_NAME=chunk-80
+make eval-retrieval-langfuse-local RUN_NAME=chunk-120 CHUNK_SIZE=120
+# then Datasets → mini-rag-retrieval → Runs, select both runs to compare them question by question
+```
+
+If Langfuse is unreachable or a key is missing, the report still prints and the command exits 0, with a warning.
+
 `pytest` needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes:
 
 ```bash
 pip install -r requirements-eval.txt
 # set ANTHROPIC_API_KEY in .env (see .env.example): the judge is Claude Haiku 5.5, a different model family from the bot
-python -m eval.llm_eval --limit 3              # smoke test
-python -m eval.llm_eval --run-name my-change   # every question
+python -m eval.llm --limit 3              # smoke test
+python -m eval.llm --run-name my-change   # every question
 mlflow ui                                      # compare runs
 ```
 

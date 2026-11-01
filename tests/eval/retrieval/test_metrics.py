@@ -1,4 +1,4 @@
-"""Retrieval eval: unit tests for the helpers, plus the gate against the committed baseline."""
+"""eval/retrieval/metrics.py: unit tests for the helpers, plus the gate against the committed baseline."""
 import json
 from types import SimpleNamespace
 
@@ -6,11 +6,9 @@ import numpy as np
 import pytest
 
 from chunker import Chunk
-from eval.checks import invalid_citations
-from eval.retrieval import (
+from eval.retrieval.metrics import (
     BASELINE_PATH, DATASET_PATH, GATED_METRICS, TOLERANCE,
-    evaluate_retrieval, invalid_keywords, load_dataset, log_to_mlflow, mlflow_name, ndcg, norm,
-    rank_of_answer, relevant_ranks,
+    evaluate_retrieval, invalid_keywords, load_dataset, ndcg, norm, rank_of_answer, relevant_ranks,
 )
 
 
@@ -106,40 +104,3 @@ def test_retrieval_gate(metrics):
         assert metrics[name] >= baseline[name] - TOLERANCE, (
             f"{name} dropped to {metrics[name]:.3f} (baseline {baseline[name]:.3f})"
         )
-
-
-class TestMlflow:
-    @pytest.mark.parametrize("metric, expected", [
-        ("mrr", "overall/mrr"),
-        ("recall@5", "overall/recall_at_5"),
-        ("ndcg@10", "overall/ndcg_at_10"),
-        ("recall@5/jupiter", "by_document/recall_at_5_jupiter"),
-    ])
-    def test_name_has_a_chart_section(self, metric, expected):
-        assert mlflow_name(metric) == expected
-
-    def test_logs_params_metrics_and_ranks(self, tmp_path, monkeypatch):
-        mlflow = pytest.importorskip("mlflow")
-        monkeypatch.setenv("MLFLOW_TRACKING_URI", f"sqlite:///{tmp_path / 'mlflow.db'}")
-        monkeypatch.chdir(tmp_path)  # artifacts go to ./mlruns, so keep them out of the repo
-        ranks = [{"id": "q01", "source": "adalovelace", "question": "q", "rank": 2}]
-
-        run_id = log_to_mlflow("test", {"k": 5}, {"recall@5": 0.9, "mrr": 0.5}, ranks)
-
-        run = mlflow.get_run(run_id)
-        assert run.data.params == {"k": "5"}
-        assert run.data.metrics == {"overall/recall_at_5": 0.9, "overall/mrr": 0.5}
-        assert mlflow.artifacts.load_dict(f"{run.info.artifact_uri}/ranks.json") == ranks
-
-
-class TestInvalidCitations:
-    @pytest.mark.parametrize("answer, allowed, expected", [
-        ("Io [3] and Europa [7].", {3, 7}, []),
-        ("A [3] B [4]", {3, 7}, [4]),
-        ("A [0]", {3}, [0]),
-        ("No citations here.", {3}, []),
-        ("A [4] B [4] C [9]", {3}, [4, 9]),
-        ("Range [2-3] and text [x] are not citations.", {1}, []),
-    ])
-    def test_cases(self, answer, allowed, expected):
-        assert invalid_citations(answer, allowed) == expected
