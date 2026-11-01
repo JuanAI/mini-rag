@@ -1,9 +1,0 @@
-numpy>=1.26
-openai>=1.40
-python-dotenv>=1.0
-sentence-transformers>=3.0
-langfuse>=5.1
-opentelemetry-api>=1.45
-opentelemetry-sdk>=1.45
-opentelemetry-exporter-otlp-proto-http>=1.45
-opentelemetry-instrumentation-openai>=0.62

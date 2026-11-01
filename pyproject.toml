@@ -1,6 +1,61 @@
+[project]
+name = "mini-rag"
+version = "0.1.0"
+description = "A small retrieval-augmented generation bot built from scratch"
+readme = "README.md"
+# langfuse 5 needs 3.11.
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "openai>=1.40",
+    "python-dotenv>=1.0",
+    "sentence-transformers>=3.0",
+    # Listed so uv can take it from the CPU index on Linux (below); sentence-transformers needs it anyway.
+    "torch>=2.4",
+    "langfuse>=5.1",
+    "opentelemetry-api>=1.45",
+    "opentelemetry-sdk>=1.45",
+    "opentelemetry-exporter-otlp-proto-http>=1.45",
+    "opentelemetry-instrumentation-openai>=0.62",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.14",
+]
+# The LLM eval and --mlflow logging: python -m eval.llm, python -m eval.retrieval --mlflow.
+eval = [
+    "mlflow>=3.17",
+    "anthropic>=2.3",
+]
+
+[tool.uv]
+# Plain modules run from the repo root, not an installable package.
+package = false
+
+# Linux (CI) gets the CPU build of torch instead of the CUDA one (several GB).
+# macOS has no CUDA build, so it uses PyPI.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 # Test folders have no __init__.py (a tests/eval package would clash with eval/),
 # so importlib mode lets files in different folders share a name, like test_metrics.py.
 addopts = "--import-mode=importlib"
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pyflakes plus the E errors that aren't style: unused imports and names, undefined
+# names, syntax problems. No formatting or import sorting. Listed explicitly because
+# ruff's default rule set grows between versions.
+select = ["E4", "E7", "E9", "F"]

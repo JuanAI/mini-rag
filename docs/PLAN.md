@@ -14,7 +14,7 @@ Steps 1–5 run without API keys; Step 3 tests mock OpenAI. Only Step 6 calls pa
 
 ## Step 0 — Environment and baseline ✅
 
-- [x] `python -m venv .venv && pip install -r requirements-dev.txt`
+- [x] `python -m venv .venv && pip install -r requirements-dev.txt` (replaced by `uv sync --extra dev` in Step 8)
 - [x] `cp .env.example .env`. The key stays empty for now; retrieval and tests don't need it.
 - [x] Set up the test layout: `tests/` holds the tests, and `pyproject.toml` sets `pythonpath` and `testpaths`. Shared fixtures go into `tests/conftest.py` in the step that first needs them (Steps 2 and 3).
 - [x] Check that `pytest` runs. It collects no tests yet: Steps 1–4 add each module together with its tests.
@@ -282,11 +282,19 @@ Not in this step: scoring live production traces with LLM judges. Online grading
 
 ## Step 8 — Polish and publish
 
-- [ ] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders.
-- [ ] Check that README examples match real output. Replace the illustrative sample session with a real one.
-- [ ] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets.
-- [ ] Optional: a `llm-eval.yml` workflow triggered manually (`workflow_dispatch`), using API keys stored as repo secrets.
-- [ ] Optional: a `ruff` config.
+- [x] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders. Checked current files and all history: `.env` was never committed, its example's key lines are empty, and the only `sk-` values are test strings (`sk-test`, `sk-lf-test`) and the throwaway local Langfuse key.
+- [x] Check that README examples match real output. Replace the illustrative sample session with a real one. Also fixed: Python 3.11+ (not 3.10), the CI notes.
+- [x] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets. Changed while doing it:
+  - Python **3.11–3.13**: langfuse 5 needs 3.11, so 3.10 can't install the requirements;
+  - no model cache: the model is committed under `models/`, and `HF_HUB_OFFLINE=1` checks nothing is downloaded. uv's cache is used instead (`astral-sh/setup-uv`), with the CPU build of torch;
+  - checked locally first with a fresh `uv sync --locked --extra dev` on 3.11 and 3.13: ruff clean, 115 passed, 2 skipped (the MLflow tests, which need the `eval` extra); 133 passed with it.
+- [x] Dependencies managed with uv instead of pip:
+  - `requirements*.txt` replaced by `[project]` in `pyproject.toml`, with the extras `dev` (pytest, ruff) and `eval` (mlflow, anthropic), and the same minimum versions; `uv.lock` (committed) pins the exact versions;
+  - `[tool.uv] package = false`: the modules run from the repo root and aren't installed as a package;
+  - torch is listed directly so `[tool.uv.sources]` can take it from PyTorch's CPU index on Linux; macOS uses PyPI;
+  - `make install`, `install-dev` and `install-eval` run `uv sync` (each installs exactly its set, so `install-eval` includes `dev`); CI uses `uv sync --locked` and `uv run --no-sync`.
+- [x] Optional: a `llm-eval.yml` workflow triggered manually (`workflow_dispatch`), using API keys stored as repo secrets. Inputs: limit (default 3), run name, generator model; the MLflow store is uploaded as an artifact. Not run yet: it needs the secrets added on GitHub.
+- [x] Optional: a `ruff` config. `[tool.ruff.lint]` in `pyproject.toml` selects `E4`, `E7`, `E9` and `F` (no style or import sorting), listed explicitly because ruff 0.17 widened its default set. One unused import fixed. `ruff` is in the `dev` extra; `ruff check` runs in CI and as `make lint`.
 - [x] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`. Done early: each step since Step 4 has been merged by PR.
 
 **Done when**: CI is green on `main`, and the repo on GitHub matches the README.

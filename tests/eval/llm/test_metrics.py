@@ -1,4 +1,4 @@
-"""eval/llm/metrics.py helpers. No API calls; skipped where requirements-eval.txt isn't installed."""
+"""eval/llm/metrics.py helpers. No API calls; skipped where the eval extra isn't installed."""
 from types import SimpleNamespace
 
 import pytest

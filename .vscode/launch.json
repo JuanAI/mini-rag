@@ -1,6 +1,6 @@
 {
   // Create the venv once before using these:
-  //   python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+  //   uv sync --extra dev   (or make install-dev; make install-eval for the LLM eval)
   // All configs use .venv in this
   // folder and run from the project root, because rag.py uses relative paths
   // (data/, models/) and reads .env from the working directory.
@@ -76,7 +76,7 @@
     },
     {
       // LLM eval: python -m eval.llm. Calls paid APIs: needs
-      // requirements-eval.txt installed and OPENAI_API_KEY + ANTHROPIC_API_KEY
+      // the eval extra installed (make install-eval) and OPENAI_API_KEY + ANTHROPIC_API_KEY
       // in .env. Asks for the scope and a run name; compare runs with mlflow ui.
       "name": "Eval: LLM judges (local mlflow)",
       "type": "debugpy",

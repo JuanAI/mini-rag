@@ -4,7 +4,7 @@ A small retrieval-augmented generation (RAG) bot built from scratch: no LangChai
 
 ```
 Me: What are the four Galilean moons?
-RAGBot: Io, Europa, Ganymede and Callisto [118].
+RAGBot: The four Galilean moons are Io, Europa, Ganymede, and Callisto [118].
 
 Retrieved sources:
 [chunk id 127] data/jupiter.txt
@@ -12,7 +12,19 @@ Retrieved sources:
 [chunk id 122] data/jupiter.txt
 [chunk id 126] data/jupiter.txt
 [chunk id 124] data/jupiter.txt
+
+Me: Can you recommend a good restaurant in London?
+RAGBot: I don't know based on these documents.
+
+Retrieved sources:
+[chunk id 104] data/adalovelace.txt
+[chunk id 26] data/adalovelace.txt
+[chunk id 79] data/adalovelace.txt
+[chunk id 25] data/adalovelace.txt
+[chunk id 82] data/adalovelace.txt
 ```
+
+A real session (`gpt-4o-mini`). `[118]` cites the chunk that names the four moons. Retrieval always returns *k* chunks, even for a question the documents can't answer, so the second answer still lists sources.
 
 ## How it works
 
@@ -38,6 +50,8 @@ mini-rag/
 ├── docker-compose.yml  # optional Jaeger, MLflow and Langfuse, opt-in profiles
 ├── Makefile         # shortcuts for the commands below (`make help`)
 ├── .vscode/         # run configuration and test settings for VS Code
+├── .github/workflows/  # CI (lint and tests on every push) and the manual LLM eval
+├── pyproject.toml   # dependencies and extras, pytest and ruff settings; uv.lock pins the versions
 ├── eval/            # eval dataset; retrieval/ (metrics, MLflow and Langfuse logging); llm/ (MLflow LLM judges)
 ├── docs/            # PLAN.md (build steps) and TDD.md (contracts)
 └── tests/           # pytest suite (real embedding model, mocked OpenAI); eval/ holds the eval tests
@@ -45,14 +59,15 @@ mini-rag/
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.11+ (Langfuse 5 needs it) and [uv](https://docs.astral.sh/uv/). CI tests 3.11, 3.12 and 3.13.
 
 ```bash
-python -m venv .venv
+uv sync                # creates .venv with the versions pinned in uv.lock
 source .venv/bin/activate
-pip install -r requirements.txt
 cp .env.example .env   # then add your OpenAI or Azure OpenAI settings
 ```
+
+Dependencies are in `pyproject.toml`, with two optional extras: `dev` (pytest, ruff) and `eval` (MLflow and the Anthropic SDK, for the LLM eval). `uv sync --extra dev --extra eval` installs everything. `uv sync` installs exactly the set you ask for, so leaving out an extra removes it. On Linux, torch comes from PyTorch's CPU index, so the CUDA build (several GB) isn't downloaded.
 
 `.env` variables. Fill in **one** provider:
 
@@ -64,7 +79,7 @@ cp .env.example .env   # then add your OpenAI or Azure OpenAI settings
 | `OPENAI_API_VERSION` | Azure | API version, e.g. `2024-10-21` |
 | `MODEL_NAME` | both | Chat model (default `gpt-4.1-mini`); for Azure, the deployment name |
 
-Or use the Makefile: `make install-dev`, then `make help` lists every command (run, test, evals, local containers).
+Or use the Makefile: `make install-dev` (or `make install-eval` for everything), then `make help` lists every command (run, test, evals, local containers).
 
 The embedding model is bundled in `models/all-MiniLM-L6-v2`, so nothing is downloaded at runtime. Run commands from the repo root, because the model path is relative.
 
@@ -153,11 +168,14 @@ Langfuse is for the live bot and MLflow for offline evals: `eval/llm/` never set
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt
+uv sync --extra dev
 pytest
+ruff check .      # or: make test, make lint
 ```
 
 The tests use the real embedding model and a mocked OpenAI client, so they make no paid API calls.
+
+GitHub Actions runs the same on every push and pull request (`.github/workflows/ci.yml`): `uv sync --locked --extra dev`, then `ruff check` once and `pytest` on Python 3.11, 3.12 and 3.13. `--locked` fails the build if `uv.lock` is out of date with `pyproject.toml`. It needs no secrets, because the embedding model is committed and OpenAI is mocked. `HF_HUB_OFFLINE=1` makes sure nothing is downloaded.
 
 ## Evaluation
 
@@ -167,11 +185,11 @@ The tests use the real embedding model and a mocked OpenAI client, so they make 
 | Citation validity: every `[n]` in an answer is a retrieved chunk id | plain Python (`eval/checks.py`) | Unit-tested by `pytest`; scored on real answers by the LLM eval |
 | Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm`, then `mlflow ui` |
 
-There is no CI workflow yet (planned in Step 8 of `docs/PLAN.md`), so `pytest` is run by hand.
+CI runs `pytest`, so the retrieval gate and the citation checks run on every push and PR. The LLM eval doesn't: it costs money and its scores vary.
 
 Current retrieval baseline: **recall@5 0.90, MRR 0.688** (top 1: 0.52, top 3: 0.84, top 10: 0.96; NDCG@10 0.643).
 
-To compare retrieval settings over time, log each run to MLflow (needs `requirements-eval.txt`, no API keys). Runs go to the `mini-rag-retrieval-eval` experiment, with the settings as params and each question's rank in `ranks.json`. The scores are deterministic, so log a run only when a setting changes:
+To compare retrieval settings over time, log each run to MLflow (needs the `eval` extra, no API keys). Runs go to the `mini-rag-retrieval-eval` experiment, with the settings as params and each question's rank in `ranks.json`. The scores are deterministic, so log a run only when a setting changes:
 
 ```bash
 python -m eval.retrieval --mlflow --run-name chunk-80
@@ -192,7 +210,7 @@ If Langfuse is unreachable or a key is missing, the report still prints and the 
 `pytest` needs no API keys. The LLM eval calls paid APIs and its scores vary from run to run, so it is run by hand whenever the prompt or model changes:
 
 ```bash
-pip install -r requirements-eval.txt
+uv sync --extra dev --extra eval
 # set ANTHROPIC_API_KEY in .env (see .env.example): the judge is Claude Haiku 5.5, a different model family from the bot
 python -m eval.llm --limit 3              # smoke test
 python -m eval.llm --run-name my-change   # every question
@@ -200,6 +218,8 @@ mlflow ui                                      # compare runs
 ```
 
 Each run logs the mean of every judge, overall and per question type (answerable or unanswerable).
+
+It can also run on GitHub: **Actions → LLM eval → Run workflow** (`.github/workflows/llm-eval.yml`), with the question limit, run name and generator model as inputs. It needs the repo secrets `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`, and uploads the MLflow store (`mlflow.db`, `mlruns/`) as an artifact: download it and run `mlflow ui` next to it.
 
 Current LLM eval results: MLflow run **`citation-fix`** (generator `gpt-4o-mini`, judge Claude Haiku 5.5, k=5, 55 questions, 0 judge errors), with the earlier run **`baseline`** for comparison:
 

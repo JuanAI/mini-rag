@@ -1,4 +1,4 @@
-"""Log a retrieval run to MLflow (--mlflow). Needs requirements-eval.txt."""
+"""Log a retrieval run to MLflow (--mlflow). Needs the eval extra (uv sync --extra eval)."""
 EXPERIMENT = "mini-rag-retrieval-eval"
 
 

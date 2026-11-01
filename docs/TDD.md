@@ -240,9 +240,9 @@ Evaluation is split by cost and determinism:
 
 | Suite | Runs | Needs | Fails the build? |
 |---|---|---|---|
-| Retrieval (custom, keyword-matched) | `pytest`, by hand until the Step 8 CI workflow exists | Embedding model only | Yes, if a metric drops below baseline |
+| Retrieval (custom, keyword-matched) | `pytest`, locally and in CI (`ci.yml`, every push and PR) | Embedding model only | Yes, if a metric drops below baseline |
 | Citation checks (unit tests of `invalid_citations`) | `pytest`, same as above | Nothing | Yes |
-| LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
+| LLM answers (MLflow GenAI) | On demand, when the prompt or model changes: locally, or `llm-eval.yml` (manual trigger, repo secrets) | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
 | Retrieval, published to Langfuse (optional) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
 
 **Retrieval in Langfuse (`--langfuse`)** publishes a deterministic eval to Langfuse, so experiment runs can be compared there:
@@ -281,7 +281,7 @@ The package keeps the scoring apart from the two optional run loggers, which nee
 | Module | Holds |
 |---|---|
 | `metrics.py` | the scoring: dataset loading, relevance, ranks, recall, MRR, NDCG, `build_bot`, the paths and constants |
-| `mlflow_log.py` | `--mlflow`: `log_to_mlflow`, `mlflow_name` (needs `requirements-eval.txt`) |
+| `mlflow_log.py` | `--mlflow`: `log_to_mlflow`, `mlflow_name` (needs the `eval` extra) |
 | `langfuse_log.py` | `--langfuse`: `log_to_langfuse` and its evaluators |
 | `__main__.py` | the CLI and console report, run by `python -m eval.retrieval` |
 
@@ -325,7 +325,7 @@ python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline] [--mlflow]
 - The CLI options:
   - `--chunk-size` overrides the chunk size while indexing. `RAGBot` creates its chunker inside `read_and_embed_data`, so the eval patches `Chunker.get_chunks` to set `self.chunk_size` on that instance before chunking.
   - `--update-baseline` refuses to run together with `--chunk-size`.
-  - `--mlflow` also logs the run to the MLflow experiment `mini-rag-retrieval-eval` (needs `requirements-eval.txt`), so retrieval experiments can be compared in `mlflow ui`:
+  - `--mlflow` also logs the run to the MLflow experiment `mini-rag-retrieval-eval` (needs the `eval` extra), so retrieval experiments can be compared in `mlflow ui`:
     - params `k`, `chunk_size`, `chunk_overlap`, `embedding_model`, `chunks`, `questions`;
     - every metric, renamed so MLflow accepts it and charts it without setup: `@` becomes `_at_` (MLflow rejects `@`), and each name gets a section prefix, because the chart view only draws metrics named `<section>/...` by itself. So `overall/recall_at_5`, `overall/mrr`, `overall/ndcg_at_10`, and `by_document/recall_at_5_jupiter`;
     - artifact `ranks.json`: each question's id, source, question and rank.
@@ -358,7 +358,7 @@ Laid out like `eval/retrieval/`: `metrics.py` holds the judges, scorers and the 
 python -m eval.llm [--limit N] [--run-name NAME]
 ```
 
-- Install with `pip install -r requirements-eval.txt` (MLflow and the Anthropic SDK). Not needed for the bot or for `pytest`.
+- Install with `uv sync --extra dev --extra eval` (the `eval` extra is MLflow and the Anthropic SDK). Not needed for the bot or for `pytest`.
 - Runs every dataset question through `RAGBot.retrieve` then `RAGBot.generate` (what `ask` does, without the sources footer) and scores the answers with `mlflow.genai.evaluate()`.
 - Runs go to the MLflow experiment `mini-rag-llm-eval`, in MLflow's default local store: `mlflow.db` plus `mlruns/` for artifacts, both ignored by git. `mlflow ui`, run from the repo root, opens them.
 - **Tracing.** One trace per question: a `predict` chain span with two children, a `RETRIEVER` span whose outputs are the chunks as `{"page_content", "metadata": {"doc_uri", "chunk_id"}}`, and the OpenAI call from `mlflow.openai.autolog()`. The retrieval judges read their context from the `RETRIEVER` span. `predict` is traced explicitly because, with autologging on, `evaluate()` would otherwise make the OpenAI call the root and leave retrieval in a separate trace.

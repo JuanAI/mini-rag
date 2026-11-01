@@ -1,7 +1,6 @@
 # Common commands. Run from the repo root: `make help` lists them.
 VENV   ?= .venv
 PYTHON := $(VENV)/bin/python
-PIP    := $(VENV)/bin/pip
 
 RUN_NAME   ?=
 LIMIT      ?= 3
@@ -17,7 +16,7 @@ LANGFUSE_LOCAL := LANGFUSE_ENABLED=true LANGFUSE_HOST=http://localhost:3100 \
                   LANGFUSE_PUBLIC_KEY=pk-lf-local-mini-rag LANGFUSE_SECRET_KEY=sk-lf-local-mini-rag
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install install-dev install-eval run run-jaeger run-langfuse-local test \
+.PHONY: help install install-dev install-eval run run-jaeger run-langfuse-local test lint \
         eval-retrieval eval-retrieval-mlflow eval-retrieval-langfuse-local update-baseline eval-llm eval-llm-smoke \
         eval-llm-server mlflow-ui obs-up obs-down evals-up evals-down langfuse-up langfuse-down \
         langfuse-reset up down ps logs clean
@@ -27,17 +26,16 @@ help: ## List the commands
 
 ## Setup
 
-venv: ## Create the virtualenv
-	test -d $(VENV) || python3 -m venv $(VENV)
+# uv creates .venv and installs the versions pinned in uv.lock. Each target installs
+# exactly its set, so install-eval includes the dev tools rather than dropping them.
+install: ## Install the bot's dependencies (uv sync)
+	uv sync
 
-install: venv ## Install the bot's dependencies
-	$(PIP) install -r requirements.txt
+install-dev: ## Install the bot plus pytest and ruff
+	uv sync --extra dev
 
-install-dev: venv ## Install the bot plus pytest
-	$(PIP) install -r requirements-dev.txt
-
-install-eval: venv ## Install the bot plus MLflow and the Anthropic SDK (LLM eval)
-	$(PIP) install -r requirements-eval.txt
+install-eval: ## Install the bot, the dev tools, MLflow and the Anthropic SDK (LLM eval)
+	uv sync --extra dev --extra eval
 
 ## Run
 
@@ -54,6 +52,9 @@ run-langfuse-local: ## Start the CLI with traces to the local Langfuse (make lan
 
 test: ## Run the test suite, including the retrieval gate (no API keys)
 	$(PYTHON) -m pytest
+
+lint: ## Ruff checks (same as CI)
+	$(VENV)/bin/ruff check .
 
 eval-retrieval: ## Retrieval report: recall@k, MRR, NDCG@10 (CHUNK_SIZE=120 to re-chunk)
 	$(PYTHON) -m eval.retrieval $(if $(CHUNK_SIZE),--chunk-size $(CHUNK_SIZE))

@@ -2,7 +2,7 @@
 plus the helpers that shape the dataset and summarise the verdicts.
 
 Each scorer handles one answer_type (answerable or unanswerable) and skips the
-other. Needs requirements-eval.txt; the judges call the JUDGE_MODEL API.
+other. Needs the eval extra (uv sync --extra eval); the judges call the JUDGE_MODEL API.
 """
 import math
 import os
