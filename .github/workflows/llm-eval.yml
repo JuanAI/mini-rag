@@ -1,5 +1,5 @@
 # The LLM answer eval, run by hand from the Actions tab. It calls paid APIs, so it
-# never runs on push. Needs the repo secrets OPENAI_API_KEY and ANTHROPIC_API_KEY.
+# never runs on its own. Needs the repo secrets OPENAI_API_KEY and ANTHROPIC_API_KEY.
 # The MLflow store (mlflow.db, mlruns/) is uploaded as an artifact: download it and
 # open it with `mlflow ui` to see the run.
 name: LLM eval

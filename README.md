@@ -50,7 +50,7 @@ mini-rag/
 ├── docker-compose.yml  # optional Jaeger, MLflow and Langfuse, opt-in profiles
 ├── Makefile         # shortcuts for the commands below (`make help`)
 ├── .vscode/         # run configuration and test settings for VS Code
-├── .github/workflows/  # CI (lint and tests on every push) and the manual LLM eval
+├── .github/workflows/  # CI (lint and tests on every PR) and the manual LLM eval
 ├── pyproject.toml   # dependencies and extras, pytest and ruff settings; uv.lock pins the versions
 ├── eval/            # eval dataset; retrieval/ (metrics, MLflow and Langfuse logging); llm/ (MLflow LLM judges)
 ├── docs/            # PLAN.md (build steps) and TDD.md (contracts)
@@ -175,7 +175,7 @@ ruff check .      # or: make test, make lint
 
 The tests use the real embedding model and a mocked OpenAI client, so they make no paid API calls.
 
-GitHub Actions runs the same on every push and pull request (`.github/workflows/ci.yml`): `uv sync --locked --extra dev`, then `ruff check` once and `pytest` on Python 3.11, 3.12 and 3.13. `--locked` fails the build if `uv.lock` is out of date with `pyproject.toml`. It needs no secrets, because the embedding model is committed and OpenAI is mocked. `HF_HUB_OFFLINE=1` makes sure nothing is downloaded.
+GitHub Actions runs the same on every pull request, when it's opened or reopened and on each new commit (`.github/workflows/ci.yml`): `uv sync --locked --extra dev`, then `ruff check` once and `pytest` on Python 3.11, 3.12 and 3.13. `--locked` fails the build if `uv.lock` is out of date with `pyproject.toml`. It needs no secrets, because the embedding model is committed and OpenAI is mocked. `HF_HUB_OFFLINE=1` makes sure nothing is downloaded.
 
 ## Evaluation
 
@@ -185,7 +185,7 @@ GitHub Actions runs the same on every push and pull request (`.github/workflows/
 | Citation validity: every `[n]` in an answer is a retrieved chunk id | plain Python (`eval/checks.py`) | Unit-tested by `pytest`; scored on real answers by the LLM eval |
 | Answer groundedness, relevance, correctness, refusal on out-of-scope questions | [MLflow GenAI](https://mlflow.org/docs/latest/genai/) LLM judges | On demand: `python -m eval.llm`, then `mlflow ui` |
 
-CI runs `pytest`, so the retrieval gate and the citation checks run on every push and PR. The LLM eval doesn't: it costs money and its scores vary.
+CI runs `pytest`, so the retrieval gate and the citation checks run on every PR. The LLM eval doesn't: it costs money and its scores vary.
 
 Current retrieval baseline: **recall@5 0.90, MRR 0.688** (top 1: 0.52, top 3: 0.84, top 10: 0.96; NDCG@10 0.643).
 

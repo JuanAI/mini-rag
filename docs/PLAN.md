@@ -285,6 +285,7 @@ Not in this step: scoring live production traces with LLM judges. Online grading
 - [x] Search the repo for secrets: no `sk-` strings, `.env` is ignored by git, and `.env.example` contains only placeholders. Checked current files and all history: `.env` was never committed, its example's key lines are empty, and the only `sk-` values are test strings (`sk-test`, `sk-lf-test`) and the throwaway local Langfuse key.
 - [x] Check that README examples match real output. Replace the illustrative sample session with a real one. Also fixed: Python 3.11+ (not 3.10), the CI notes.
 - [x] Add a GitHub Actions workflow (`ci.yml`) that, on every push and PR, runs `pytest` on Python 3.10–3.12, covering the unit tests, the retrieval gate and the citation checks. Cache the Hugging Face model between runs. It needs no secrets. Changed while doing it:
+  - runs on pull requests only (`opened`, `synchronize`, `reopened`), not on every push: with both, each PR commit ran every job twice;
   - Python **3.11–3.13**: langfuse 5 needs 3.11, so 3.10 can't install the requirements;
   - no model cache: the model is committed under `models/`, and `HF_HUB_OFFLINE=1` checks nothing is downloaded. uv's cache is used instead (`astral-sh/setup-uv`), with the CPU build of torch;
   - checked locally first with a fresh `uv sync --locked --extra dev` on 3.11 and 3.13: ruff clean, 115 passed, 2 skipped (the MLflow tests, which need the `eval` extra); 133 passed with it.
@@ -297,7 +298,7 @@ Not in this step: scoring live production traces with LLM judges. Online grading
 - [x] Optional: a `ruff` config. `[tool.ruff.lint]` in `pyproject.toml` selects `E4`, `E7`, `E9` and `F` (no style or import sorting), listed explicitly because ruff 0.17 widened its default set. One unused import fixed. `ruff` is in the `dev` extra; `ruff check` runs in CI and as `make lint`.
 - [x] `git init`, make the first commit, add the remote `git@github.com:JuanAI/mini-rag.git`, and push to `main`. Done early: each step since Step 4 has been merged by PR.
 
-**Done when**: CI is green on `main`, and the repo on GitHub matches the README.
+**Done when**: CI is green on the PR that merges into `main`, and the repo on GitHub matches the README.
 
 ---
 

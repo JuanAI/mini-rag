@@ -1,10 +1,14 @@
-# Unit tests, the retrieval gate and the citation checks on every push and PR.
+# Unit tests, the retrieval gate and the citation checks on every pull request: when it
+# is opened or reopened, and on each new commit pushed to it. Not on pushes without a PR.
 # No secrets: the embedding model is committed under models/, and OpenAI is mocked.
 name: CI
 
 on:
-  push:
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 jobs:
   lint:
