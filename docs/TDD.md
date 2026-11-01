@@ -1,6 +1,6 @@
 # TDD — signatures and contracts
 
-Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `tests/` (one file per module: `test_parser.py`, `test_chunker.py`, `test_rag.py`, `test_cli.py`, `test_telemetry.py`, and the eval tests in `tests/eval/`: `test_eval_retrieval.py`, `test_llm_eval.py`); [PLAN.md](PLAN.md) gives the order they get written in.
+Each public function and class in mini-rag, with what it accepts, returns, guarantees and raises. Every contract below should be covered by at least one test in `tests/` (one file per module: `test_parser.py`, `test_chunker.py`, `test_rag.py`, `test_cli.py`, `test_telemetry.py`, and the eval tests in `tests/eval/`, laid out like `eval/`: `test_checks.py`, `llm/test_metrics.py`, and `retrieval/test_metrics.py`, `test_mlflow_log.py`, `test_langfuse_log.py`. The test folders have no `__init__.py`, because a `tests/eval` package would clash with the real `eval` package; pytest runs in `importlib` import mode (`pyproject.toml`), which lets files in different folders share a name); [PLAN.md](PLAN.md) gives the order they get written in.
 
 Items marked **planned** describe contracts that are written but not built yet.
 
@@ -231,7 +231,7 @@ docker compose --profile obs --profile evals --profile langfuse down
   Every secret in it is a local-only default, which is acceptable only because nothing is reachable from outside the machine. It costs six containers and about 3–4 GB of RAM. `make run-langfuse-local` passes the local keys on the command line, so they win over `.env`.
 
 ### Interplay with the MLflow eval
-- `eval/llm_eval.py` uses MLflow tracing and never calls `setup_telemetry()` or `setup_langfuse()`, so eval traces don't reach Langfuse. OpenTelemetry instrumentation and MLflow tracing running in the same process can produce duplicate or broken traces, so the two are kept apart.
+- `eval/llm/` uses MLflow tracing and never calls `setup_telemetry()` or `setup_langfuse()`, so eval traces don't reach Langfuse. OpenTelemetry instrumentation and MLflow tracing running in the same process can produce duplicate or broken traces, so the two are kept apart.
 - So Langfuse is for the live bot (`main.py`), and MLflow for offline evals. That's a common split in production enterprise-level apps.
 
 ## Evaluation — `eval/`
@@ -243,13 +243,15 @@ Evaluation is split by cost and determinism:
 | Retrieval (custom, keyword-matched) | `pytest`, by hand until the Step 8 CI workflow exists | Embedding model only | Yes, if a metric drops below baseline |
 | Citation checks (unit tests of `invalid_citations`) | `pytest`, same as above | Nothing | Yes |
 | LLM answers (MLflow GenAI) | On demand, when the prompt or model changes | OpenAI and Anthropic keys | No; compared by hand in `mlflow ui` |
-| Retrieval, published to Langfuse (planned, optional) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
+| Retrieval, published to Langfuse (optional) | On demand: `python -m eval.retrieval --langfuse` | Langfuse keys | No; compared in Langfuse **Datasets → Runs** |
 
-**Retrieval in Langfuse (`--langfuse`, planned)** publishes a deterministic eval to Langfuse, so experiment runs can be compared there:
-- Upserts a Langfuse dataset `mini-rag-retrieval` with one item per answerable question. Item IDs are `mini-rag-retrieval-{id}` (Langfuse item IDs are unique across all datasets), and `create_dataset_item` upserts by ID, so re-runs update the same items rather than adding new ones.
-- Records one experiment run per invocation, named with `--run-name` (default: chunk size and timestamp). Each item gets the scores `rank` (omitted if not found) and `hit@5`, and the run gets `recall@1/3/5/10` and `mrr`.
-- The console report is printed first, whatever happens. If Langfuse is unreachable or misconfigured, it logs a warning and the command still exits 0.
+**Retrieval in Langfuse (`--langfuse`)** publishes a deterministic eval to Langfuse, so experiment runs can be compared there:
+- Upserts a Langfuse dataset `mini-rag-retrieval` with one item per answerable question: input `{"question"}`, expected output `{"source", "keyword"}`, metadata `{"id"}`. Item IDs are `mini-rag-retrieval-{id}` (Langfuse item IDs are unique across all datasets), and `create_dataset_item` upserts by ID, so re-runs update the same items rather than adding new ones.
+- Records one experiment run per invocation (`run_experiment` over those items), named with `--run-name` (default: `chunk-{size}-{timestamp}`), with the same params as the MLflow run as metadata. No LLM call: each item's task output is its precomputed ranks.
+- Each item gets the scores `rank` (omitted if not found) and `hit@5` (1 or 0, so its run average is recall@5). The run gets `recall@1/3/5/10`, `mrr` and `ndcg@10`, from the same `metrics_from_ranks` as the console report.
+- The console report is printed first, whatever happens. Then the run's URL, or, if Langfuse is unreachable or a key is missing, a warning on stderr; the command still exits 0.
 - This is what makes chunk-size experiments comparable side by side in Langfuse. The pytest gate still reads `eval/baselines/retrieval.json` and doesn't depend on Langfuse.
+- It ignores `LANGFUSE_ENABLED`, which only switches bot tracing: the flag is the opt-in.
 
 ### Dataset — `eval/dataset.jsonl`
 
@@ -272,21 +274,42 @@ One JSON object per line:
 
 **Why keywords rather than chunk IDs.** A chunk is relevant when it comes from `source` and contains `keyword`, after both are normalized. Relevance is worked out again on every run, so the labels survive any change to chunk size, overlap or embedding model. That is exactly what the eval exists to compare. Labels that pointed at chunk IDs would go stale on every chunker change.
 
-### Retrieval metrics — `eval/retrieval.py`
+### Retrieval metrics — `eval/retrieval/`
+
+The package keeps the scoring apart from the two optional run loggers, which need different extra installs:
+
+| Module | Holds |
+|---|---|
+| `metrics.py` | the scoring: dataset loading, relevance, ranks, recall, MRR, NDCG, `build_bot`, the paths and constants |
+| `mlflow_log.py` | `--mlflow`: `log_to_mlflow`, `mlflow_name` (needs `requirements-eval.txt`) |
+| `langfuse_log.py` | `--langfuse`: `log_to_langfuse` and its evaluators |
+| `__main__.py` | the CLI and console report, run by `python -m eval.retrieval` |
+
+The logger modules aren't named `mlflow.py` and `langfuse.py`, so they can't be mistaken for, or shadow, the libraries they import.
 
 ```python
+# metrics.py
 def norm(text: str) -> str: ...
 def load_dataset(path: Path) -> list[dict]: ...
 def invalid_keywords(bot: RAGBot, dataset: list[dict]) -> list[str]: ...
 def relevant_ranks(bot: RAGBot, item: dict) -> list[int]: ...
 def rank_of_answer(bot: RAGBot, item: dict) -> int | None: ...
 def ndcg(ranks: list[int], k: int = 10) -> float: ...
+def metrics_from_ranks(all_ranks: list[list[int]], ks=(1, 3, 5, 10)) -> dict[str, float]: ...
 def evaluate_retrieval(bot: RAGBot, dataset: list[dict], ks=(1, 3, 5, 10)) -> dict[str, float]: ...
+
+# mlflow_log.py
 def log_to_mlflow(run_name: str | None, params: dict, metrics: dict[str, float], ranks: list[dict]) -> str: ...
+
+# langfuse_log.py
+def log_to_langfuse(run_name: str | None, params: dict, items: list[dict],
+                    all_ranks: list[list[int]]) -> str | None: ...   # the run URL, or None after a warning
+def item_scores(*, output: dict, **kwargs) -> list[Evaluation]: ...  # Langfuse item evaluator
+def run_scores(*, item_results: list, **kwargs) -> list[Evaluation]: ...  # Langfuse run evaluator
 ```
 
 ```bash
-python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline] [--mlflow [--run-name NAME]]
+python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline] [--mlflow] [--langfuse] [--run-name NAME]
 ```
 
 - `norm`: lowercases the text and collapses every run of characters that aren't letters or digits into one space. This makes matching robust to how the tokenizer decodes text, e.g. `£3,000` becomes `£3, 000`.
@@ -308,9 +331,10 @@ python -m eval.retrieval [--chunk-size N] [--k N] [--update-baseline] [--mlflow 
     - artifact `ranks.json`: each question's id, source, question and rank.
 
     No traces: there is no LLM call. The baseline file stays the pass/fail gate; MLflow only keeps history.
+  - `--langfuse` publishes the dataset and an experiment run to Langfuse; see "Retrieval in Langfuse" above. `--mlflow` and `--langfuse` can be combined, and `--run-name` names the run in both.
 - Results are deterministic: the same code, data and model always give the same metrics.
 - `RAGBot()` needs a key to construct its LLM client. If none is configured, the eval sets a placeholder key: retrieval never calls the LLM.
-- **Gate** (`tests/eval/test_eval_retrieval.py`, run by `pytest`; CI will run it from Step 8):
+- **Gate** (`tests/eval/retrieval/test_metrics.py`, run by `pytest`; CI will run it from Step 8):
   - `invalid_keywords(...) == []`.
   - `recall@5` and `mrr` must each be ≥ the value in `eval/baselines/retrieval.json` − 0.02.
 - The baseline is updated only deliberately, with `--update-baseline` and a commit, so every change to it is visible in the PR diff.
@@ -326,10 +350,12 @@ def invalid_citations(answer: str, allowed: Iterable[int]) -> list[int]: ...
 - Only bracketed whole numbers count as citations: `[2-3]` and `[x]` are ignored.
 - These are pure functions, unit-tested by `pytest` and reused as a scorer in the LLM eval.
 
-### LLM answer eval — `eval/llm_eval.py`
+### LLM answer eval — `eval/llm/`
+
+Laid out like `eval/retrieval/`: `metrics.py` holds the judges, scorers and the helpers below (`to_records`, `make_predict_fn`, `make_scorers`, `context_precision`, `to_score`, `means_by_answer_type`, `judge_errors`); `__main__.py` holds `build_bot` and the run, so the command is `python -m eval.llm`. There is no separate MLflow module: the scorers are MLflow scorers, so MLflow is the eval itself, not an optional logger.
 
 ```bash
-python -m eval.llm_eval [--limit N] [--run-name NAME]
+python -m eval.llm [--limit N] [--run-name NAME]
 ```
 
 - Install with `pip install -r requirements-eval.txt` (MLflow and the Anthropic SDK). Not needed for the bot or for `pytest`.
@@ -359,7 +385,7 @@ python -m eval.llm_eval [--limit N] [--run-name NAME]
 - Every scorer has `aggregations=[]`, so MLflow logs no `<scorer>/mean`. That metric would only repeat `<scorer>/answerable` (or `/unanswerable`), because each scorer covers one type.
 - **Judge errors fail the run.** MLflow records a failed judge (bad key, API outage) on the row and still reports "Evaluation completed". The script prints up to 10 errors and exits with code 1, so missing scores aren't mistaken for real ones.
 - `--limit N` runs only the first N questions, as a smoke test.
-- **Never runs automatically**, and will stay out of CI. The scores vary from run to run and it costs money. The helpers have unit tests (`tests/eval/test_llm_eval.py`) that make no API calls and are skipped when MLflow isn't installed.
+- **Never runs automatically**, and will stay out of CI. The scores vary from run to run and it costs money. The helpers have unit tests (`tests/eval/llm/test_metrics.py`) that make no API calls and are skipped when MLflow isn't installed.
 
 ## Configuration — `.env`
 
