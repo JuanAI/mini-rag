@@ -1,3 +1,6 @@
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# Test folders have no __init__.py (a tests/eval package would clash with eval/),
+# so importlib mode lets files in different folders share a name, like test_metrics.py.
+addopts = "--import-mode=importlib"

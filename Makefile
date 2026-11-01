@@ -18,12 +18,12 @@ LANGFUSE_LOCAL := LANGFUSE_ENABLED=true LANGFUSE_HOST=http://localhost:3100 \
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install install-dev install-eval run run-jaeger run-langfuse-local test \
-        eval-retrieval eval-retrieval-mlflow update-baseline eval-llm eval-llm-smoke \
+        eval-retrieval eval-retrieval-mlflow eval-retrieval-langfuse-local update-baseline eval-llm eval-llm-smoke \
         eval-llm-server mlflow-ui obs-up obs-down evals-up evals-down langfuse-up langfuse-down \
         langfuse-reset up down ps logs clean
 
 help: ## List the commands
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 ## Setup
 
@@ -61,17 +61,20 @@ eval-retrieval: ## Retrieval report: recall@k, MRR, NDCG@10 (CHUNK_SIZE=120 to r
 eval-retrieval-mlflow: ## Retrieval report, also logged to MLflow (RUN_NAME=chunk-80, CHUNK_SIZE=...)
 	$(PYTHON) -m eval.retrieval --mlflow $(if $(RUN_NAME),--run-name $(RUN_NAME)) $(if $(CHUNK_SIZE),--chunk-size $(CHUNK_SIZE))
 
+eval-retrieval-langfuse-local: ## Retrieval report, also published to the local Langfuse (RUN_NAME=..., CHUNK_SIZE=...)
+	$(LANGFUSE_LOCAL) $(PYTHON) -m eval.retrieval --langfuse $(if $(RUN_NAME),--run-name $(RUN_NAME)) $(if $(CHUNK_SIZE),--chunk-size $(CHUNK_SIZE))
+
 update-baseline: ## Rewrite eval/baselines/retrieval.json (commit it deliberately)
 	$(PYTHON) -m eval.retrieval --update-baseline
 
 eval-llm: ## LLM judge eval over every question; paid APIs (RUN_NAME=my-change)
-	$(PYTHON) -m eval.llm_eval $(if $(RUN_NAME),--run-name $(RUN_NAME))
+	$(PYTHON) -m eval.llm $(if $(RUN_NAME),--run-name $(RUN_NAME))
 
 eval-llm-smoke: ## LLM judge eval on the first LIMIT questions (default 3)
-	$(PYTHON) -m eval.llm_eval --limit $(LIMIT)
+	$(PYTHON) -m eval.llm --limit $(LIMIT)
 
 eval-llm-server: ## LLM judge eval logged to the MLflow container (make evals-up first)
-	MLFLOW_TRACKING_URI=$(MLFLOW_SERVER) $(PYTHON) -m eval.llm_eval $(if $(RUN_NAME),--run-name $(RUN_NAME))
+	MLFLOW_TRACKING_URI=$(MLFLOW_SERVER) $(PYTHON) -m eval.llm $(if $(RUN_NAME),--run-name $(RUN_NAME))
 
 mlflow-ui: ## Open the local mlflow.db at http://localhost:5000 (same port as evals-up)
 	$(VENV)/bin/mlflow ui
